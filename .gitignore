@@ -1,0 +1,16 @@
+# CIFAR-10 dataset (download separately)
+cifar-10-batches-bin/
+
+# Compiled binaries
+data_loader
+main
+minivgg
+*.o
+*.obj
+
+# Editor / IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
