@@ -6,8 +6,8 @@ FLAGS = -O2 -Iinclude -I$(CUDNN_PATH)/include -L$(CUDNN_PATH)/lib -lcudnn -lcubl
 	$(NVCC) $(FLAGS) -o $@ $
 
 # Mini-VGG main target
-minivgg: minivgg.cu src/data_loader.cpp src/cuda_kernels.cu src/common.cpp
-	$(NVCC) $(FLAGS) -o minivgg minivgg.cu src/data_loader.cpp src/cuda_kernels.cu src/common.cpp
+minivgg: minivgg.cu src/data_loader.cpp src/cuda_kernels.cu src/common.cpp src/conv_layer.cu
+	$(NVCC) $(FLAGS) -o minivgg minivgg.cu src/data_loader.cpp src/cuda_kernels.cu src/common.cpp src/conv_layer.cu
 
 clean:
 	rm -f minivgg main data_loader
