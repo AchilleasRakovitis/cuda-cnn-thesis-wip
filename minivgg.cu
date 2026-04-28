@@ -14,6 +14,7 @@
  * DECREASE (32→16→8→4). This is the fundamental pattern of all CNNs.
  */
 
+#include "cuda_kernels.h"
 #include <iostream>
 #include <vector>
 #include <stdlib.h>
