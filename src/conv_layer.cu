@@ -156,9 +156,9 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
 // Run one layer's forward pass
 // =========================================================
 void forward_layer(cudnnHandle_t cudnn, convLayer& layer, float* d_input, void* d_workspace){
-    float alpha = 1.0f;
-    float beta_overwrite = 0.0f;
-    float beta_accumulate = 1.0f;
+    const float alpha = 1.0f;
+    const float beta_overwrite = 0.0f;
+    const float beta_accumulate = 1.0f;
 
     CHECK_CUDNN(cudnnConvolutionForward(
         cudnn,

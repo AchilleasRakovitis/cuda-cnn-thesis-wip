@@ -1,7 +1,4 @@
 /*
- * Example 6: Mini-VGG — 3 Convolutional Layers Chained
- * 
- * This is the closest to a real CNN so far.
  * Three layers, each doing: Conv → Bias → ReLU → MaxPool
  * The output of layer 1 feeds into layer 2, etc.
  * 
@@ -23,15 +20,15 @@
 #include "data_loader.h"
 #include <cublas_v2.h>
 #include "common.h"
-
-// =========================================================
-// Struct that holds everything for one CNN layer
-// =========================================================
+#include "fc_layer.h"
 
 int main(){
     
     cudnnHandle_t cudnn;
     CHECK_CUDNN(cudnnCreate(&cudnn));
+
+    cublasHandle_t cublas;
+    CHECK_CUBLAS(cublasCreate(&cublas));
 
     std::cout << "=== Mini-VGG: 3-Layer CNN ===" << std::endl;
 
@@ -73,8 +70,8 @@ int main(){
     // Layer 2: 16 → 32 channels, 16x16 → 8x8 after pool
     // Layer 3: 32 → 64 channels, 8x8 → 4x4 after pool
 
-    std::cout << "\n--- Creating layers ---" << std::endl;
     print_shape("Input", in_n, in_c, in_h, in_w);
+    std::cout << "\n--- Creating layers ---" << std::endl;
 
     convLayer layer1 = create_layer(cudnn, in_n, in_c, in_h, in_w, 16, 3, input_desc);
 
@@ -98,6 +95,17 @@ int main(){
     print_shape("  After conv", layer3.out_n, layer3.out_c, layer3.out_h, layer3.out_w);
     print_shape("  After pool", layer3.pool_n, layer3.pool_c, layer3.pool_h, layer3.pool_w);
 
+    int fc_input_size = layer3.pool_c * layer3.pool_h * layer3.pool_w;
+    fcLayer fc1 = create_fc_layer(cudnn, fc_input_size, 512, in_n, true);
+
+    fcLayer fc2 = create_fc_layer(cudnn, 512, 256, in_n, true);
+
+    fcLayer fc3 = create_fc_layer(cudnn, 256, 10, in_n, false);
+
+    std::cout << "\nFC1: " << fc_input_size << " → 512 (ReLU)" << std::endl;
+    std::cout << "FC2: 512 → 256 (ReLU)" << std::endl;
+    std::cout << "FC3: 256 → 10 (logits)" << std::endl;
+    
     // =========================================================
     // Allocate shared workspace (max of all layers)
     // =========================================================
@@ -129,6 +137,20 @@ int main(){
     print_gpu_tensor("Layer 3 output", layer3.d_pool_out,
                      layer3.pool_n * layer3.pool_c * layer3.pool_h * layer3.pool_w);
 
+    
+    // FC1: layer3 output (flattened to [N, 1024]) → fc1.d_output [N, 512]
+    forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
+    print_gpu_tensor("FC1 output", fc1.d_output, in_n * fc1.out_features);
+    
+    // FC2: fc1 output[N, 512] -> fc2 output[N, 256]
+    forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
+    print_gpu_tensor("FC2 output", fc2.d_output, in_n * fc2.out_features);
+
+    // FC3: fc2 output[N, 256] -> fc3 output[N, 10] (logits)
+    forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
+    print_gpu_tensor("FC3 output", fc3.d_output, in_n * fc3.out_features);
+
+
     // =========================================================
     // Timing the full forward pass
     // =========================================================
@@ -143,6 +165,10 @@ int main(){
         forward_layer(cudnn, layer1, d_input, d_workspace);
         forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
         forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
+    
+        forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
+        forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
+        forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
     }
 
     CHECK_CUDA(cudaDeviceSynchronize());
@@ -154,6 +180,10 @@ int main(){
         forward_layer(cudnn, layer1, d_input, d_workspace);
         forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
         forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
+
+        forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
+        forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
+        forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
     }
     CHECK_CUDA(cudaEventRecord(stop));
     CHECK_CUDA(cudaDeviceSynchronize());
@@ -189,7 +219,13 @@ int main(){
     destroy_layer(layer1);
     destroy_layer(layer2);
     destroy_layer(layer3);
+
+    destroy_fc_layer(fc1);
+    destroy_fc_layer(fc2);
+    destroy_fc_layer(fc3);
+
     CHECK_CUDNN(cudnnDestroy(cudnn));
+    CHECK_CUBLAS(cublasDestroy(cublas));
 
     std::cout << "\nDone!" << std::endl;
 
