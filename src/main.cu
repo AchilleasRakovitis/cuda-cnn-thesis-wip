@@ -49,7 +49,12 @@ int main(){
 
     //Allocate and Initialize input
     float* d_input;
+
+    //Allocate and initialize labels
+    uint8_t* d_labels;
+
     CHECK_CUDA(cudaMalloc(&d_input, input_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&d_labels, in_n * sizeof(uint8_t)));
 
     std::vector<float> pixels;
     std::vector<uint8_t> labels;
@@ -59,10 +64,26 @@ int main(){
     CHECK_CUDA(cudaMemcpy(d_input, pixels.data(), input_size * sizeof(float),
                         cudaMemcpyHostToDevice));
 
+    CHECK_CUDA(cudaMemcpy(d_labels, labels.data(), in_n * sizeof(uint8_t),
+                            cudaMemcpyHostToDevice));
+
     std::cout << "First 5 labels in batch: ";
     for (int i = 0; i < 5; i++) std::cout << static_cast<int>(labels[i]) << " ";
     std::cout << std::endl;
+
+    /*debug:
+    std::vector<uint8_t> h_labels(in_n);
+    CHECK_CUDA(cudaMemcpy(h_labels.data(), d_labels, in_n*sizeof(uint8_t),
+                            cudaMemcpyDeviceToHost));
     
+    std::cout << "First 5 labels in host when copied back: ";                        
+    for(int i = 0; i < 5; i++) std::cout << static_cast<int>(h_labels[i]) << " ";                        
+    std::cout << std::endl;
+
+
+    */
+
+
 // =========================================================
     // Create 3 layers
     // =========================================================
@@ -214,6 +235,7 @@ int main(){
     CHECK_CUDA(cudaEventDestroy(stop));
     if(d_workspace) CHECK_CUDA(cudaFree(d_workspace));
     CHECK_CUDA(cudaFree(d_input));
+    CHECK_CUDA(cudaFree(d_labels));
     CHECK_CUDNN(cudnnDestroyTensorDescriptor(input_desc));
 
     destroy_layer(layer1);

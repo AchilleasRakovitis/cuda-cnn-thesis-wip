@@ -41,6 +41,7 @@ fcLayer create_fc_layer(cudnnHandle_t cudnn, int in_features, int out_features,
     CHECK_CUDA(cudaMalloc(&layer.d_bias, bias_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_output, output_size * sizeof(float)));
 
+    // TODO Wave 3: replace constant init with random for symmetry breaking
     //Initialize weights and bias
     std::vector<float> h_weights(weights_size, 0.01f);
     std::vector<float> h_bias(bias_size, 0.0f);
