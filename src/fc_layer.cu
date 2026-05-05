@@ -32,6 +32,7 @@ fcLayer create_fc_layer(cudnnHandle_t cudnn, int in_features, int out_features,
         0.0
     ));
 
+    //TODO: change them to const int
     //Allocate GPU Buffers for this layers parameters
     int weights_size = layer.out_features * layer.in_features;
     int bias_size = layer.out_features;

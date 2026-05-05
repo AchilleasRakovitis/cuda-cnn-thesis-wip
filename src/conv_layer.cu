@@ -130,6 +130,7 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
         layer.output_desc, layer.algo, &layer.workspace_bytes
     ));
 
+    //TODO: change them to const int
     //Allocate GPU memory for this layer's weights and outputs
     int filter_size = num_filters * in_c * kernel_size * kernel_size;
     int conv_out_size = layer.out_n * layer.out_c * layer.out_h * layer.out_w;
