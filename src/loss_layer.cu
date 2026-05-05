@@ -33,3 +33,13 @@ lossLayer create_loss_layer(cudnnHandle_t cudnn, int batch_size, int num_classes
 
     return layer;
 }
+
+void destroy_loss_layer(lossLayer& layer){
+    CHECK_CUDA(cudaFree(layer.d_logprobs));
+    CHECK_CUDA(cudaFree(layer.d_losses_per_sample));
+    CHECK_CUDA(cudaFree(layer.d_final_loss));
+
+    CHECK_CUDNN(cudnnDestroyTensorDescriptor(layer.logits_desc));
+
+}
+
