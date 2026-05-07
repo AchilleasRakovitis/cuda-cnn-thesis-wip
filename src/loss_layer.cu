@@ -34,6 +34,33 @@ lossLayer create_loss_layer(cudnnHandle_t cudnn, int batch_size, int num_classes
     return layer;
 }
 
+void forward_loss_layer(cudnnHandle_t cudnn, lossLayer& layer, float* d_logits,
+                        uint8_t* d_labels){
+    
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+
+    CHECK_CUDNN(cudnnSoftmaxForward(
+        cudnn,
+        CUDNN_SOFTMAX_LOG,
+        CUDNN_SOFTMAX_MODE_INSTANCE,
+        &alpha,
+        layer.logits_desc,
+        d_logits,
+        &beta,
+        layer.logits_desc,
+        layer.d_logprobs
+    ));
+    
+    int threads = 256;
+    int blocks = (layer.batch_size + threads -1 ) / threads;
+
+    nll_kernel<<<blocks, threads>>>(layer.d_logprobs, d_labels, layer.d_losses_per_sample,
+                                    layer.batch_size, layer.num_classes);
+    CHECK_CUDA(cudaGetLastError());
+
+}
+
 void destroy_loss_layer(lossLayer& layer){
     CHECK_CUDA(cudaFree(layer.d_logprobs));
     CHECK_CUDA(cudaFree(layer.d_losses_per_sample));

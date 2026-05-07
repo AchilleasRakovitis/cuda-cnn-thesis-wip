@@ -21,6 +21,7 @@
 #include <cublas_v2.h>
 #include "common.h"
 #include "fc_layer.h"
+#include "loss_layer.h"
 
 int main(){
     
@@ -126,7 +127,11 @@ int main(){
     std::cout << "\nFC1: " << fc_input_size << " → 512 (ReLU)" << std::endl;
     std::cout << "FC2: 512 → 256 (ReLU)" << std::endl;
     std::cout << "FC3: 256 → 10 (logits)" << std::endl;
-    
+
+    //Create the loss Layer
+    const int num_classes = 10;
+    lossLayer loss = create_loss_layer(cudnn, in_n, num_classes);
+    std::cout << "Loss Layer created" << std::endl;
     // =========================================================
     // Allocate shared workspace (max of all layers)
     // =========================================================
@@ -171,6 +176,10 @@ int main(){
     forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
     print_gpu_tensor("FC3 output", fc3.d_output, in_n * fc3.out_features);
 
+    // Loss Layer: logits[N 10] ->  
+    forward_loss_layer(cudnn, loss, fc3.d_output, d_labels);
+    print_gpu_tensor("Log-probs (first 10)", loss.d_logprobs, 10);
+    print_gpu_tensor("Per-sample losses (first 10)", loss.d_losses_per_sample, 10);
 
     // =========================================================
     // Timing the full forward pass
@@ -245,6 +254,8 @@ int main(){
     destroy_fc_layer(fc1);
     destroy_fc_layer(fc2);
     destroy_fc_layer(fc3);
+
+    destroy_loss_layer(loss);
 
     CHECK_CUDNN(cudnnDestroy(cudnn));
     CHECK_CUBLAS(cublasDestroy(cublas));
