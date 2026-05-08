@@ -181,6 +181,11 @@ int main(){
     print_gpu_tensor("Log-probs (first 10)", loss.d_logprobs, 10);
     print_gpu_tensor("Per-sample losses (first 10)", loss.d_losses_per_sample, 10);
 
+    float h_loss;
+    cudaMemcpy(&h_loss, loss.d_final_loss, sizeof(float), cudaMemcpyDeviceToHost);
+    std::cout << "Batch loss: " << h_loss << std::endl;
+
+
     // =========================================================
     // Timing the full forward pass
     // =========================================================

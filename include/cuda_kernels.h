@@ -1,8 +1,11 @@
 #pragma once
 
 #include <stdint.h>
+#include <cuda_runtime.h>
 
-__global__ void add_bias_kernel(float*, const float*, int, int);
+__global__ void add_bias_kernel(float* Y, const float* b, int N, int O);
 
 __global__ void nll_kernel(const float* d_logprobs, const uint8_t* d_labels,
                             float* d_losses, int batch_size, int num_classes);
+
+__global__ void mean_reduce_kernel(const float* in, float* out_sum, int batch_size);
