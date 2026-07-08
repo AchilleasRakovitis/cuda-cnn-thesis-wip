@@ -32,11 +32,10 @@ fcLayer create_fc_layer(cudnnHandle_t cudnn, int in_features, int out_features,
         0.0
     ));
 
-    //TODO: change them to const int
     //Allocate GPU Buffers for this layers parameters
-    int weights_size = layer.out_features * layer.in_features;
-    int bias_size = layer.out_features;
-    int output_size = layer.batch_size * layer.out_features;
+    const int weights_size = layer.out_features * layer.in_features;
+    const int bias_size = layer.out_features;
+    const int output_size = layer.batch_size * layer.out_features;
 
     CHECK_CUDA(cudaMalloc(&layer.d_weights, weights_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_bias, bias_size * sizeof(float)));

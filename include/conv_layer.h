@@ -2,10 +2,6 @@
 #include "common.h"
 #include <cudnn.h>
 
-#pragma once
-
-#include "common.h"
-#include <cudnn.h>
 
 // =========================================================
 // Struct that holds everything for one CNN layer
