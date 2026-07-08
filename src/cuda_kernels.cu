@@ -1,8 +1,8 @@
 #include "cuda_kernels.h"
 
 // Adds a per-channel bias to a row-major [N, O] output tensor.
-// One thread per output element. The bias vector b has shape [O], so each
-// element Y[idx] gets b[idx % O] added in. Used as Phase 1 plumbing in
+// One thread per output element. The bias vector bias has shape [out_features], so each
+// element output[idx] gets bias[idx % out_features] added in. Used as Phase 1 plumbing in
 // forward_fc_layer to follow the cuBLAS GEMM with a bias add.
 __global__ void add_bias_kernel(float* output, const float* bias, int batch_size, int out_features){
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
