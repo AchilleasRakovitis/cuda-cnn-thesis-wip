@@ -11,11 +11,11 @@ void print_gpu_tensor(const std::string& name, float* d_data, int count){
     CHECK_CUDA(cudaMemcpy(h_data.data(), d_data, count * sizeof(float), 
                             cudaMemcpyDeviceToHost));
     std::cout << "  " << name << ": [";
-    int show = (count < 6) ? count : 6;
+    int show = (count < 10) ? count : 10;
     for(int i = 0; i < show; i++){
         std::cout << h_data[i];
         if(i < show - 1) std::cout << ", ";
     }
-    if(count > 6) std::cout << ",...";
+    if(count > 10) std::cout << ",...";
     std::cout << "] (" << count << " total)" << std::endl;
 }
