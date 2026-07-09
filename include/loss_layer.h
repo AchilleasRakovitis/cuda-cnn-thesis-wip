@@ -23,4 +23,7 @@ lossLayer create_loss_layer(cudnnHandle_t cudnn, int batch_size, int num_classes
 void forward_loss_layer(cudnnHandle_t cudnn, lossLayer& layer, float* d_logits,
                         uint8_t* d_labels);
 
+void backward_loss_layer(lossLayer& layer, uint8_t* d_labels);
+
 void destroy_loss_layer(lossLayer& layer);
+

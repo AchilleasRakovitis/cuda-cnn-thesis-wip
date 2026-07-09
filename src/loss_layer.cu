@@ -80,6 +80,18 @@ void forward_loss_layer(cudnnHandle_t cudnn, lossLayer& layer, float* d_logits,
 
 }
 
+void backward_loss_layer(lossLayer& layer, uint8_t* d_labels){
+    
+    int total = layer.batch_size * layer.num_classes;
+    int threads = 256;
+    int blocks = (total + threads - 1) / threads;
+
+    loss_backward_kernel<<<blocks, threads>>>(layer.d_logprobs, d_labels, layer.d_grad_logits,
+                                              layer.batch_size, layer.num_classes);
+    
+    CHECK_CUDA(cudaGetLastError());
+}
+
 void destroy_loss_layer(lossLayer& layer){
     CHECK_CUDA(cudaFree(layer.d_logprobs));
     CHECK_CUDA(cudaFree(layer.d_losses_per_sample));
