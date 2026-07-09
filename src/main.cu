@@ -187,15 +187,7 @@ int main(){
     
     // --- Backward Pass (Wave 3a): loss gradient dz = (p - y)/N ---
     backward_loss_layer(loss, d_labels);
-
-    // Copy gradient back to host to inspect (debug/verification)
-    std::vector<float> h_grad(loss.batch_size * loss.num_classes);
-    CHECK_CUDA(cudaMemcpy(h_grad.data(), loss.d_grad_logits, h_grad.size() * sizeof(float),
-                          cudaMemcpyDeviceToHost));
-
-    std::cout << "  Grad logits (first 10): [";
-    for (int i = 0; i < 10; ++i) std::cout << h_grad[i] << (i < 9 ? ", " : "");
-    std::cout << "]" << std::endl;
+    print_gpu_tensor("Grad logits (first 10)", loss.d_grad_logits, 10);
 
     // =========================================================
     // Timing the full forward pass
