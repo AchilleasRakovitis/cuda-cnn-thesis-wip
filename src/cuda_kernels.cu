@@ -22,7 +22,7 @@ __global__ void nll_kernel(const float* d_logprobs ,const uint8_t* d_labels,
                             float* d_losses, const int batch_size, const int num_classes){
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if(idx < batch_size){
-        int label = d_labels[idx];
+            int label = d_labels[idx];
         float logp = d_logprobs[idx * num_classes + label];
         float loss = -logp;
         d_losses[idx] = loss;
@@ -54,5 +54,24 @@ __global__ void mean_reduce_kernel(const float* in, float* out_sum, int batch_si
     if(tid == 0){
         out_sum[0] = sdata[0] / batch_size;
     }
+
+}
+// Computes the loss gradient dz = (p - y) / N for every logit.
+// One thread per element of the [batch, classes] grid (640 threads for 64x10).
+//   p = expf(log_p)  ... 
+//   y = 1 if this element's class is the image's true label, else 0 ...
+__global__ void loss_backward_kernel(const float* d_logprobs, const uint8_t* d_labels,
+                                     float* d_grad_logits, int batch_size, int num_classes){
+        
+      int idx = blockIdx.x * blockDim.x + threadIdx.x;
+      int total = batch_size * num_classes;
+      if(idx < total){
+        int sample = idx / num_classes;
+        int cls = idx % num_classes;
+
+        float p  = expf(d_logprobs[idx]);
+        float y  = (cls == d_labels[sample]) ? 1.0f : 0.0f;
+        d_grad_logits[idx] = (p - y) / (float)batch_size;
+      }  
 
 }
