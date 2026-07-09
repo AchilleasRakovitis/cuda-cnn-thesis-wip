@@ -15,6 +15,7 @@ struct lossLayer{
     float* d_logprobs;
     float* d_losses_per_sample;
     float* d_final_loss;
+    float* d_grad_logits; // dL/dLogits [batch, classes]
 };
 
 lossLayer create_loss_layer(cudnnHandle_t cudnn, int batch_size, int num_classes);

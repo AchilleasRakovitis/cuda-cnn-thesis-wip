@@ -28,6 +28,7 @@ lossLayer create_loss_layer(cudnnHandle_t cudnn, int batch_size, int num_classes
     CHECK_CUDA(cudaMalloc(&layer.d_logprobs, logits_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_losses_per_sample, losses_per_sample_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_final_loss, final_loss_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&layer.d_grad_logits, logits_size * sizeof(float)));
 
     //Debug Sanity 
     CHECK_CUDA(cudaMemset(layer.d_final_loss, 0, final_loss_size * sizeof(float)));
@@ -83,6 +84,7 @@ void destroy_loss_layer(lossLayer& layer){
     CHECK_CUDA(cudaFree(layer.d_logprobs));
     CHECK_CUDA(cudaFree(layer.d_losses_per_sample));
     CHECK_CUDA(cudaFree(layer.d_final_loss));
+    CHECK_CUDA(cudaFree(layer.d_grad_logits));
 
     CHECK_CUDNN(cudnnDestroyTensorDescriptor(layer.logits_desc));
 
