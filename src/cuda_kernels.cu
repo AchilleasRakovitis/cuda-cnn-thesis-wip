@@ -75,3 +75,19 @@ __global__ void loss_backward_kernel(const float* d_logprobs, const uint8_t* d_l
       }  
 
 }
+
+//computes the gradient of the bias: db[o] = Σ_n dY[n][o]
+//a thread for each neuron, each threads sum its own column of dY[N, O]
+//no /N because 1 / N is already in dz calculated at the loss layer.
+__global__ void bias_backward_kernel(const float* d_grad_output, float* d_grad_bias,
+                                     int batch_size, int out_features){
+    
+    int o = blockIdx.x * blockDim.x + threadIdx.x;
+    if(o < out_features){
+        float sum = 0.0f;
+        for(int n = 0; n < batch_size; n++){
+            sum += d_grad_output[n * out_features + o]; // stride = out_features
+        }
+        d_grad_bias[o] = sum;
+    }
+}
