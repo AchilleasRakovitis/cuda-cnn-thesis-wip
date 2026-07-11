@@ -47,6 +47,7 @@ fcLayer create_fc_layer(cudnnHandle_t cudnn, int in_features, int out_features,
     CHECK_CUDA(cudaMalloc(&layer.d_grad_weights, weights_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_grad_bias, bias_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_grad_input, input_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&layer.d_grad_preact, output_size * sizeof(float)));
 
     // TODO Wave 3: replace constant init with random for symmetry breaking
     //Initialize weights and bias
@@ -113,6 +114,69 @@ void forward_fc_layer(cudnnHandle_t cudnn, cublasHandle_t cublas, fcLayer& layer
     }
 }
 
+void backward_fc_layer(cudnnHandle_t cudnn, cublasHandle_t cublas, fcLayer& layer,
+                       float* d_input, float* d_grad_output){
+    
+    const float alpha = 1.0f;
+    const float beta_overwrite = 0.0f;
+
+    //ReLU backwards if it exists.
+    //dY right now is after ReLU
+    //to take the gradient before ReLU activation we have to pass it back through ReLU
+    //Lucky because with ReLU where x > 0 y is the same. 
+    float* dY = d_grad_output; //FC3 with no ReLU
+    if(layer.apply_relu){
+        CHECK_CUDNN(cudnnActivationBackward(
+            cudnn, layer.relu_desc,
+            &alpha,
+            layer.output_desc, layer.d_output,  // y  = post-activation output
+            layer.output_desc, d_grad_output,   // dy = incoming gradient
+            layer.output_desc, layer.d_output,  // x = pre activation input
+            &beta_overwrite,    // beta = 0 so overwrite
+            layer.output_desc, layer.d_grad_preact // dx = masked gradient
+        ));
+        dY = layer.d_grad_preact; // below this only dY gets used
+    }
+
+    // ---- 2. db = Σ_n dY[n][o] ----
+    int threads = 256;
+    int blocks = (layer.out_features + threads - 1) / threads;
+    bias_backward_kernel<<<blocks, threads>>>(dY, layer.d_grad_bias, layer.batch_size, layer.out_features);
+    CHECK_CUDA(cudaGetLastError());
+
+    // dW = dY^T * X
+    // cuBLAS: dW^T = X^T * dY
+    CHECK_CUBLAS(cublasSgemm(
+        cublas,
+        CUBLAS_OP_N,    // A = X so dont change cublas sees X^T   
+        CUBLAS_OP_T,    // B = dY, cublas sees dY^T so tranpose it 
+        layer.in_features,  // m = rows or result dW^T
+        layer.out_features, // n = cols of result
+        layer.batch_size,   // k = inner dim, summed away
+        &alpha,
+        d_input, layer.in_features, // A = this layers forward input [N, I], lda = rows of A as cublas sees it
+        dY, layer.out_features, // B = output gradient[N, O] ldb = rows of B as cublas sees it
+        &beta_overwrite,
+        layer.d_grad_weights, layer.in_features // C = dW [O, I], ldc = rows of C as cublas writes it 
+    ));
+
+    // dX = dY * W
+    //cuBLAS:  dX^T = W^T * dY^T
+    CHECK_CUBLAS(cublasSgemm(
+        cublas,
+        CUBLAS_OP_N,    // A = W, cublas sees W^T so we dont transpose it 
+        CUBLAS_OP_N,    // B = dY cublas sees dY^T so we dont tranpose it 
+        layer.in_features,  // m = rows of result dX^T
+        layer.batch_size,   // n = cols of result
+        layer.out_features, // k = inner dim. summed away
+        &alpha,
+        layer.d_weights, layer.in_features, // A = weights [O, I], lda = rows of A as cublas sees it
+        dY, layer.out_features, // B = output gradient [N, O], ldb = rows of B as cublas sees it 
+        &beta_overwrite, 
+        layer.d_grad_input, layer.in_features   // C = dX [N, I], ldc = rows of C as cublas writes it 
+    ));
+}
+
 void destroy_fc_layer(fcLayer& layer){
     CHECK_CUDA(cudaFree(layer.d_weights));
     CHECK_CUDA(cudaFree(layer.d_bias));
@@ -120,6 +184,7 @@ void destroy_fc_layer(fcLayer& layer){
     CHECK_CUDA(cudaFree(layer.d_grad_weights));
     CHECK_CUDA(cudaFree(layer.d_grad_bias));
     CHECK_CUDA(cudaFree(layer.d_grad_input));
+    CHECK_CUDA(cudaFree(layer.d_grad_preact));
 
     CHECK_CUDNN(cudnnDestroyTensorDescriptor(layer.output_desc));
     CHECK_CUDNN(cudnnDestroyActivationDescriptor(layer.relu_desc));
