@@ -189,6 +189,16 @@ int main(){
     backward_loss_layer(loss, d_labels);
     print_gpu_tensor("Grad logits (first 10)", loss.d_grad_logits, 10);
 
+    //Backward through the FC Layers
+    //Each layer gets the input that it have in forward, the gradient from infront
+    backward_fc_layer(cudnn, cublas, fc3, fc2.d_output, loss.d_grad_logits);
+    backward_fc_layer(cudnn, cublas, fc2, fc1.d_output, fc3.d_grad_input);
+    backward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out, fc2.d_grad_input);
+
+    print_gpu_tensor("FC3 grad weights", fc3.d_grad_weights, 10);
+    print_gpu_tensor("FC3 grad bias",    fc3.d_grad_bias,    10);
+    print_gpu_tensor("FC1 grad input",   fc1.d_grad_input,   10);
+
     // =========================================================
     // Timing the full forward pass
     // =========================================================
