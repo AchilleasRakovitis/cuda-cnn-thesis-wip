@@ -14,6 +14,11 @@ struct fcLayer{
     float* d_weights;
     float* d_output;
 
+    //Gradients
+    float* d_grad_weights; //dL/dW [O, I] -same shape as d_weights
+    float* d_grad_bias; // dL/dB [O] -same shape as d_bias
+    float* d_grad_input; // dL/dX[N, I] -same shape as fcLayer input
+
     //Dimensions
     int in_features, out_features, batch_size;
     

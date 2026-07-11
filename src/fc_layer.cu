@@ -36,10 +36,17 @@ fcLayer create_fc_layer(cudnnHandle_t cudnn, int in_features, int out_features,
     const int weights_size = layer.out_features * layer.in_features;
     const int bias_size = layer.out_features;
     const int output_size = layer.batch_size * layer.out_features;
+    
 
     CHECK_CUDA(cudaMalloc(&layer.d_weights, weights_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_bias, bias_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_output, output_size * sizeof(float)));
+
+    //Memory allocation for this layer back prop.
+    const int input_size = layer.batch_size * layer.in_features; // for d_grad_input
+    CHECK_CUDA(cudaMalloc(&layer.d_grad_weights, weights_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&layer.d_grad_bias, bias_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&layer.d_grad_input, input_size * sizeof(float)));
 
     // TODO Wave 3: replace constant init with random for symmetry breaking
     //Initialize weights and bias
@@ -110,6 +117,9 @@ void destroy_fc_layer(fcLayer& layer){
     CHECK_CUDA(cudaFree(layer.d_weights));
     CHECK_CUDA(cudaFree(layer.d_bias));
     CHECK_CUDA(cudaFree(layer.d_output));
+    CHECK_CUDA(cudaFree(layer.d_grad_weights));
+    CHECK_CUDA(cudaFree(layer.d_grad_bias));
+    CHECK_CUDA(cudaFree(layer.d_grad_input));
 
     CHECK_CUDNN(cudnnDestroyTensorDescriptor(layer.output_desc));
     CHECK_CUDNN(cudnnDestroyActivationDescriptor(layer.relu_desc));
