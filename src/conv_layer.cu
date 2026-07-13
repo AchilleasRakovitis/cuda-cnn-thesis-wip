@@ -7,6 +7,12 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
 
     convLayer layer;
     layer.input_desc = input_desc;
+    
+    //assign and save the input dimentions for input gradient use.
+    layer.in_n = in_n;
+    layer.in_c = in_c;
+    layer.in_h = in_h;
+    layer.in_w = in_w;
 
     //Filter
     CHECK_CUDNN(cudnnCreateFilterDescriptor(&layer.filter_desc));
@@ -140,6 +146,21 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
     CHECK_CUDA(cudaMalloc(&layer.d_conv_out, conv_out_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_pool_out, pool_out_size * sizeof(float)));
 
+    //Gradient buffer sizes. Each gradient has the same shape as the tensor it grades
+    //so i can use the same sizes as the forward process.
+    const int grad_conv_out_size = conv_out_size;
+    const int grad_filter_size = filter_size;
+    const int grad_bias_size = num_filters;
+    const int grad_input_size = in_n * in_c * in_h * in_w;
+
+    //Memory allocation for grad buffers in device memory
+    CHECK_CUDA(cudaMalloc(&layer.d_grad_conv_out, grad_conv_out_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&layer.d_grad_filter, grad_filter_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&layer.d_grad_bias, grad_bias_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&layer.d_grad_input, grad_input_size * sizeof(float)));
+
+
+
     //Initialize weights with small values, bias with zeros
     std::vector<float> h_filter(filter_size, 0.01f);
     std::vector<float> h_bias(num_filters, 0.0f);
@@ -221,6 +242,10 @@ void destroy_layer(convLayer& layer){
     CHECK_CUDA(cudaFree(layer.d_bias));
     CHECK_CUDA(cudaFree(layer.d_conv_out));
     CHECK_CUDA(cudaFree(layer.d_pool_out));
+    CHECK_CUDA(cudaFree(layer.d_grad_conv_out));
+    CHECK_CUDA(cudaFree(layer.d_grad_filter));
+    CHECK_CUDA(cudaFree(layer.d_grad_bias));
+    CHECK_CUDA(cudaFree(layer.d_grad_input));
     // Don't destroy input_desc — it belongs to the previous layer or main
     CHECK_CUDNN(cudnnDestroyTensorDescriptor(layer.pool_out_desc));
     CHECK_CUDNN(cudnnDestroyTensorDescriptor(layer.output_desc));

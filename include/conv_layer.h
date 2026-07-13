@@ -27,6 +27,19 @@ struct convLayer {
     float* d_conv_out;
     float* d_pool_out;
 
+    //Gradient buffers
+    //One Buffer covers all intermediate gradients at the conv_output, pooling
+    //backward writes it, ReLU backward masks it, conv backward reads it, its 
+    //safe to use the same buffer unlike in the fc layer that i used a new preact buffer
+    //because this buffers is owned by this layer and each stage consumes the previous one.
+    float* d_grad_conv_out; // [N, K, H, W] gradient at the conv output
+    float* d_grad_bias; // [K] same shape as d_bias
+    float* d_grad_filter;   // [K, C, R, S] same shape as d_filter   
+    float* d_grad_input;    // [N, C, H_in, W_in] - travels back at the previous layer
+
+    //Dimentions needed for d_grad_input
+    int in_n, in_c, in_h, in_w;
+
     // Dimensions
     int out_n, out_c, out_h, out_w;
     int pool_n, pool_c, pool_h, pool_w;
