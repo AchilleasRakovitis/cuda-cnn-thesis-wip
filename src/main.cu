@@ -138,6 +138,13 @@ int main(){
     size_t max_ws = layer1.workspace_bytes;
     if(layer2.workspace_bytes > max_ws) max_ws = layer2.workspace_bytes;
     if(layer3.workspace_bytes > max_ws) max_ws = layer3.workspace_bytes;
+    //Backward workspaces
+    if(layer1.bwd_filter_workspace_bytes > max_ws) max_ws = layer1.bwd_filter_workspace_bytes;
+    if(layer2.bwd_filter_workspace_bytes > max_ws) max_ws = layer2.bwd_filter_workspace_bytes;
+    if(layer3.bwd_filter_workspace_bytes > max_ws) max_ws = layer3.bwd_filter_workspace_bytes;
+    if(layer1.bwd_data_workspace_bytes > max_ws) max_ws = layer1.bwd_data_workspace_bytes;
+    if(layer2.bwd_data_workspace_bytes > max_ws) max_ws = layer2.bwd_data_workspace_bytes;
+    if(layer3.bwd_data_workspace_bytes > max_ws) max_ws = layer3.bwd_data_workspace_bytes;
 
     void* d_workspace = nullptr;
     if(max_ws > 0) CHECK_CUDA(cudaMalloc(&d_workspace, max_ws));

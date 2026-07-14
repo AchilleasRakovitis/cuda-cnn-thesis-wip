@@ -21,6 +21,12 @@ struct convLayer {
     cudnnConvolutionFwdAlgo_t algo;
     size_t workspace_bytes;
 
+    //Backward Algorithm selection same logic as forward
+    cudnnConvolutionBwdFilterAlgo_t bwd_filter_algo;
+    cudnnConvolutionBwdDataAlgo_t bwd_data_algo;
+    size_t bwd_filter_workspace_bytes;
+    size_t bwd_data_workspace_bytes;
+
     // GPU data
     float* d_filter;
     float* d_bias;

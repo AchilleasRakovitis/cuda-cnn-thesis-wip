@@ -136,6 +136,76 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
         layer.output_desc, layer.algo, &layer.workspace_bytes
     ));
 
+    //Backward Filter algorithm selection, same logic as forward - dFilter from(input, dConvOut)
+    int max_bwd_filter_algos;
+    CHECK_CUDNN(cudnnGetConvolutionBackwardFilterAlgorithmMaxCount(
+        cudnn, &max_bwd_filter_algos
+    ));
+
+    std::vector<cudnnConvolutionBwdFilterAlgoPerf_t> bwd_perf_filter(max_bwd_filter_algos);
+    int bwd_returned_filter;
+    CHECK_CUDNN(cudnnFindConvolutionBackwardFilterAlgorithm(
+        cudnn,
+        input_desc,     // x   — this layer's input
+        layer.output_desc,  // dy  — gradient at the conv output
+        layer.conv_desc,
+        layer.filter_desc,  // dw  — what we're solving for
+        max_bwd_filter_algos,
+        &bwd_returned_filter,
+        bwd_perf_filter.data()    
+    ));
+
+    layer.bwd_filter_algo = bwd_perf_filter[0].algo;
+
+    CHECK_CUDNN(cudnnGetConvolutionBackwardFilterWorkspaceSize(
+        cudnn, 
+        input_desc,
+        layer.output_desc,
+        layer.conv_desc,
+        layer.filter_desc,
+        layer.bwd_filter_algo,
+        &layer.bwd_filter_workspace_bytes
+    ));
+
+    //Backward data algorithm, dInput from (filter, dConvOut)
+    int max_bwd_data_algos;
+    CHECK_CUDNN(cudnnGetConvolutionBackwardDataAlgorithmMaxCount(
+        cudnn, &max_bwd_data_algos
+    ));
+
+    std::vector<cudnnConvolutionBwdDataAlgoPerf_t> bwd_perf_data(max_bwd_data_algos);
+    int bwd_returned_data;
+    CHECK_CUDNN(cudnnFindConvolutionBackwardDataAlgorithm(
+        cudnn,
+        layer.filter_desc,  // w   — the filter
+        layer.output_desc,  // dy  — gradient at the conv output
+        layer.conv_desc,
+        input_desc,     // dx  — what we're solving for
+        max_bwd_data_algos,
+        &bwd_returned_data,
+        bwd_perf_data.data()
+    ));
+
+    layer.bwd_data_algo = bwd_perf_data[0].algo;
+
+    CHECK_CUDNN(cudnnGetConvolutionBackwardDataWorkspaceSize(
+        cudnn,
+        layer.filter_desc,
+        layer.output_desc,
+        layer.conv_desc,
+        input_desc,
+        layer.bwd_data_algo,
+        &layer.bwd_data_workspace_bytes
+    ));
+
+    
+    std::cout << "  fwd algo=" << layer.algo
+              << " ws=" << layer.workspace_bytes
+              << " | bwd_filter algo=" << layer.bwd_filter_algo
+              << " ws=" << layer.bwd_filter_workspace_bytes
+              << " | bwd_data algo=" << layer.bwd_data_algo
+              << " ws=" << layer.bwd_data_workspace_bytes << std::endl;
+
     //Allocate GPU memory for this layer's weights and outputs
     const int filter_size = num_filters * in_c * kernel_size * kernel_size;
     const int conv_out_size = layer.out_n * layer.out_c * layer.out_h * layer.out_w;
