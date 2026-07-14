@@ -5,6 +5,7 @@
 #include <cudnn.h>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
+#include <vector>
 
 #define CHECK_CUDNN(call) \
     do{ \
@@ -39,3 +40,4 @@
 
 void print_shape(const std::string& label, int n, int c, int h, int w);
 void print_gpu_tensor(const std::string& name, float* d_data, int count);
+void he_init(std::vector<float>& weights, int fan_in, unsigned seed);
