@@ -95,7 +95,7 @@ int main(){
     print_shape("Input", in_n, in_c, in_h, in_w);
     std::cout << "\n--- Creating layers ---" << std::endl;
 
-    convLayer layer1 = create_layer(cudnn, in_n, in_c, in_h, in_w, 16, 3, input_desc);
+    convLayer layer1 = create_layer(cudnn, in_n, in_c, in_h, in_w, 16, 3, input_desc, 1);
 
     std::cout << "Layer 1: " << in_c << " → " << 16 << " channels" << std::endl;
 
@@ -104,14 +104,14 @@ int main(){
     print_shape(" After pool", layer1.pool_n, layer1.pool_c, layer1.pool_h, layer1.pool_w);
 
     convLayer layer2 = create_layer(cudnn, layer1.pool_n, layer1.pool_c, layer1.pool_h, layer1.pool_w,
-                                    32, 3, layer1.pool_out_desc);
+                                    32, 3, layer1.pool_out_desc, 2);
     
     std::cout << "Layer 2: " << 16 << " → " << 32 << " channels" << std::endl;
     print_shape("  After conv", layer2.out_n, layer2.out_c, layer2.out_h, layer2.out_w);
     print_shape("  After pool", layer2.pool_n, layer2.pool_c, layer2.pool_h, layer2.pool_w);
 
     convLayer layer3 = create_layer(cudnn, layer2.pool_n, layer2.pool_c, layer2.pool_h, layer2.pool_w,
-                                    64, 3, layer2.pool_out_desc);
+                                    64, 3, layer2.pool_out_desc, 3);
 
     std::cout << "Layer 3: " << 32 << " → " << 64 << " channels" << std::endl;
     print_shape("  After conv", layer3.out_n, layer3.out_c, layer3.out_h, layer3.out_w);

@@ -3,7 +3,7 @@
 
 convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
                         int in_w, int num_filters, int kernel_size,
-                        cudnnTensorDescriptor_t input_desc){
+                        cudnnTensorDescriptor_t input_desc, unsigned seed){
 
     convLayer layer;
     layer.input_desc = input_desc;
@@ -231,9 +231,12 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
 
 
 
-    //Initialize weights with small values, bias with zeros
-    std::vector<float> h_filter(filter_size, 0.01f);
+    //Initialize weights with he_init, bias with zeros
+    std::vector<float> h_filter(filter_size);
     std::vector<float> h_bias(num_filters, 0.0f);
+
+    int fan_in = in_c * kernel_size * kernel_size;
+    he_init(h_filter, fan_in, seed); 
 
     CHECK_CUDA(cudaMemcpy(layer.d_filter, h_filter.data(), filter_size * sizeof(float),
                             cudaMemcpyHostToDevice));

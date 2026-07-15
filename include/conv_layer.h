@@ -53,7 +53,7 @@ struct convLayer {
 
 convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
                        int in_w, int num_filters, int kernel_size,
-                       cudnnTensorDescriptor_t input_desc);
+                       cudnnTensorDescriptor_t input_desc, unsigned seed);
 
 void forward_layer(cudnnHandle_t cudnn, convLayer& layer, float* d_input,
                    void* d_workspace);
