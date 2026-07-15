@@ -28,7 +28,7 @@ struct fcLayer{
 };
 
 fcLayer create_fc_layer(cudnnHandle_t cudnn, int in_features, int out_features,
-                        int batch_size, bool apply_relu);
+                        int batch_size, bool apply_relu, unsigned seed);
 
 void forward_fc_layer(cudnnHandle_t cudnn, cublasHandle_t cublas, fcLayer& layer,
                       float* d_input);

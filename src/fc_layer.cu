@@ -3,7 +3,7 @@
 #include "cuda_kernels.h"
 
 fcLayer create_fc_layer(cudnnHandle_t cudnn, int in_features, int out_features,
-                        int batch_size, bool apply_relu){
+                        int batch_size, bool apply_relu, unsigned seed){
         
     // Copy parameters into the struct
     fcLayer layer;
@@ -49,10 +49,11 @@ fcLayer create_fc_layer(cudnnHandle_t cudnn, int in_features, int out_features,
     CHECK_CUDA(cudaMalloc(&layer.d_grad_input, input_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_grad_preact, output_size * sizeof(float)));
 
-    // TODO Wave 3: replace constant init with random for symmetry breaking
     //Initialize weights and bias
-    std::vector<float> h_weights(weights_size, 0.01f);
+    std::vector<float> h_weights(weights_size);
     std::vector<float> h_bias(bias_size, 0.0f);
+
+    he_init(h_weights, layer.in_features, seed);
 
     CHECK_CUDA(cudaMemcpy(layer.d_weights, h_weights.data(), weights_size*sizeof(float),
                             cudaMemcpyHostToDevice));

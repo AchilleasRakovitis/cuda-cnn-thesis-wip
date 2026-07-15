@@ -118,11 +118,11 @@ int main(){
     print_shape("  After pool", layer3.pool_n, layer3.pool_c, layer3.pool_h, layer3.pool_w);
 
     int fc_input_size = layer3.pool_c * layer3.pool_h * layer3.pool_w;
-    fcLayer fc1 = create_fc_layer(cudnn, fc_input_size, 512, in_n, true);
+    fcLayer fc1 = create_fc_layer(cudnn, fc_input_size, 512, in_n, true, 4);
 
-    fcLayer fc2 = create_fc_layer(cudnn, 512, 256, in_n, true);
+    fcLayer fc2 = create_fc_layer(cudnn, 512, 256, in_n, true, 5);
 
-    fcLayer fc3 = create_fc_layer(cudnn, 256, 10, in_n, false);
+    fcLayer fc3 = create_fc_layer(cudnn, 256, 10, in_n, false, 6);
 
     std::cout << "\nFC1: " << fc_input_size << " → 512 (ReLU)" << std::endl;
     std::cout << "FC2: 512 → 256 (ReLU)" << std::endl;
