@@ -307,6 +307,74 @@ void forward_layer(cudnnHandle_t cudnn, convLayer& layer, float* d_input, void* 
 
 }
 
+void backward_conv_layer(cudnnHandle_t cudnn, convLayer& layer, float* d_input,
+                         float* d_grad_pool_out, void* d_workspace){
+
+    const float alpha = 1.0f;
+    const float beta_overwrite = 0.0f;
+    
+    //Pooling backward, routes gradient to each 2x2 tile's winner
+    //expands [N, K, H/2, H/2] to [N, K, H, W]. it needs pooling's forward
+    //input and output
+    CHECK_CUDNN(cudnnPoolingBackward(
+        cudnn,
+        layer.pool_desc,
+        &alpha,
+        layer.pool_out_desc, layer.d_pool_out, //y = pooling forward OUTPUT
+        layer.pool_out_desc, d_grad_pool_out,   //dy incoming gradients (at pool output)
+        layer.output_desc, layer.d_conv_out,    //x = pooling forward input(post ReLU)
+        &beta_overwrite,
+        layer.output_desc, layer.d_grad_conv_out //dx = expanded gradient
+    ));
+
+    //ReLU backward, its a mask y is > 0 where x > 0.same as fc layer
+    CHECK_CUDNN(cudnnActivationBackward(
+        cudnn,
+        layer.relu_desc,
+        &alpha,
+        layer.output_desc, layer.d_conv_out,    // y post activation
+        layer.output_desc, layer.d_grad_conv_out,   //dy = gradient from pooling backward
+        layer.output_desc, layer.d_conv_out,    //x = pre activation
+        &beta_overwrite,
+        layer.output_desc, layer.d_grad_conv_out    //dx = masked, written back in place
+    ));
+
+    //Bias backward, sums gradient over N, H, W (one bias serves a whole feature map)
+    CHECK_CUDNN(cudnnConvolutionBackwardBias(
+        cudnn,
+        &alpha,
+        layer.output_desc, layer.d_grad_conv_out, //dy
+        &beta_overwrite,
+        layer.bias_desc, layer.d_grad_bias //db
+    ));
+
+    //Filter gradient, corrects each filter's weight, we use(input, dConvOut)
+    CHECK_CUDNN(cudnnConvolutionBackwardFilter(
+        cudnn,
+        &alpha,
+        layer.input_desc, d_input,  //x
+        layer.output_desc, layer.d_grad_conv_out, //dy
+        layer.conv_desc,
+        layer.bwd_filter_algo,
+        d_workspace, layer.bwd_filter_workspace_bytes,
+        &beta_overwrite,
+        layer.filter_desc, layer.d_grad_filter //dw
+    ));
+
+    //Data Gradient: the parcel that travels back, we need(filter, dConvOut)
+    CHECK_CUDNN(cudnnConvolutionBackwardData(
+        cudnn,
+        &alpha,
+        layer.filter_desc, layer.d_filter,  //w
+        layer.output_desc, layer.d_grad_conv_out, //dy
+        layer.conv_desc,
+        layer.bwd_data_algo,
+        d_workspace, layer.bwd_data_workspace_bytes,
+        &beta_overwrite,
+        layer.input_desc, layer.d_grad_input //dx
+    ));
+}
+
 // =========================================================
 // Cleanup one layer
 // =========================================================

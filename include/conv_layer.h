@@ -58,4 +58,7 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
 void forward_layer(cudnnHandle_t cudnn, convLayer& layer, float* d_input,
                    void* d_workspace);
 
+void backward_conv_layer(cudnnHandle_t cudnn, convLayer& layer, float* d_input, 
+                         float* d_grad_pool_out, void* d_workspace);
+
 void destroy_layer(convLayer& layer);
