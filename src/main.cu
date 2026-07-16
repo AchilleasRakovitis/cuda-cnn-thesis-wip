@@ -206,6 +206,16 @@ int main(){
     print_gpu_tensor("FC3 grad bias",    fc3.d_grad_bias,    10);
     print_gpu_tensor("FC1 grad input",   fc1.d_grad_input,   10);
 
+    //Backward through the FC Layers
+    //Each layers gets its forward input and the gradient arriving back to front
+    backward_conv_layer(cudnn, layer3, layer2.d_pool_out, fc1.d_grad_input, d_workspace);
+    backward_conv_layer(cudnn, layer2, layer1.d_pool_out, layer3.d_grad_input, d_workspace);
+    backward_conv_layer(cudnn, layer1, d_input, layer2.d_grad_input, d_workspace);
+
+    print_gpu_tensor("conv3 grad filter", layer3.d_grad_filter, 10);
+    print_gpu_tensor("conv3 grad bias", layer3.d_grad_bias, 10);
+    print_gpu_tensor("conv1 grad filter", layer1.d_grad_filter, 10);
+
     // =========================================================
     // Timing the full forward pass
     // =========================================================
