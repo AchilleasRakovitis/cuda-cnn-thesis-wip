@@ -208,6 +208,7 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
               << " ws=" << layer.bwd_data_workspace_bytes << std::endl;
 
     //Allocate GPU memory for this layer's weights and outputs
+    layer.kernel_size = kernel_size;
     layer.filter_size = num_filters * in_c * kernel_size * kernel_size;
     const int conv_out_size = layer.out_n * layer.out_c * layer.out_h * layer.out_w;
     const int pool_out_size = layer.pool_n * layer.pool_c * layer.pool_h * layer.pool_w;
