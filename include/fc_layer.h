@@ -36,4 +36,7 @@ void forward_fc_layer(cudnnHandle_t cudnn, cublasHandle_t cublas, fcLayer& layer
 void backward_fc_layer(cudnnHandle_t cudnn, cublasHandle_t cublas, fcLayer& layer,
                        float* d_input, float* d_grad_output);
 
+            
+void update_fc_layer(fcLayer& layer, float lr);
+
 void destroy_fc_layer(fcLayer& layer);

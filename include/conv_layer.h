@@ -47,6 +47,8 @@ struct convLayer {
     int in_n, in_c, in_h, in_w;
 
     // Dimensions
+    int kernel_size;
+    int filter_size;
     int out_n, out_c, out_h, out_w;
     int pool_n, pool_c, pool_h, pool_w;
 };
@@ -60,5 +62,8 @@ void forward_layer(cudnnHandle_t cudnn, convLayer& layer, float* d_input,
 
 void backward_conv_layer(cudnnHandle_t cudnn, convLayer& layer, float* d_input, 
                          float* d_grad_pool_out, void* d_workspace);
+
+
+void update_conv_layer(convLayer& layer, float lr);
 
 void destroy_layer(convLayer& layer);

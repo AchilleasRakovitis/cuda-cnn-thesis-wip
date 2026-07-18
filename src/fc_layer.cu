@@ -178,6 +178,24 @@ void backward_fc_layer(cudnnHandle_t cudnn, cublasHandle_t cublas, fcLayer& laye
     ));
 }
 
+void update_fc_layer(fcLayer& layer, float lr){
+    const int threads = 256;
+
+    int weight_size = layer.in_features * layer.out_features;
+
+    int weight_blocks = (weight_size + threads - 1) / threads;
+    sgd_update_kernel<<<weight_blocks, threads>>>(layer.d_weights, layer.d_grad_weights,
+                                                  lr, weight_size);
+
+    CHECK_CUDA(cudaGetLastError());
+
+    int bias_blocks = (layer.out_features + threads - 1) / threads;
+    sgd_update_kernel<<<bias_blocks, threads>>>(layer.d_bias, layer.d_grad_bias,
+                                                lr,  layer.out_features);
+
+    CHECK_CUDA(cudaGetLastError());
+}
+
 void destroy_fc_layer(fcLayer& layer){
     CHECK_CUDA(cudaFree(layer.d_weights));
     CHECK_CUDA(cudaFree(layer.d_bias));

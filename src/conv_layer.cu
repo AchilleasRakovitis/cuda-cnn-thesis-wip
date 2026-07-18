@@ -1,4 +1,5 @@
 #include "conv_layer.h"
+#include "cuda_kernels.h"
 #include <vector>
 
 convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
@@ -207,11 +208,11 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
               << " ws=" << layer.bwd_data_workspace_bytes << std::endl;
 
     //Allocate GPU memory for this layer's weights and outputs
-    const int filter_size = num_filters * in_c * kernel_size * kernel_size;
+    layer.filter_size = num_filters * in_c * kernel_size * kernel_size;
     const int conv_out_size = layer.out_n * layer.out_c * layer.out_h * layer.out_w;
     const int pool_out_size = layer.pool_n * layer.pool_c * layer.pool_h * layer.pool_w;
 
-    CHECK_CUDA(cudaMalloc(&layer.d_filter, filter_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&layer.d_filter, layer.filter_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_bias, num_filters * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_conv_out, conv_out_size * sizeof(float)));
     CHECK_CUDA(cudaMalloc(&layer.d_pool_out, pool_out_size * sizeof(float)));
@@ -219,7 +220,7 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
     //Gradient buffer sizes. Each gradient has the same shape as the tensor it grades
     //so i can use the same sizes as the forward process.
     const int grad_conv_out_size = conv_out_size;
-    const int grad_filter_size = filter_size;
+    const int grad_filter_size = layer.filter_size;
     const int grad_bias_size = num_filters;
     const int grad_input_size = in_n * in_c * in_h * in_w;
 
@@ -232,13 +233,13 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
 
 
     //Initialize weights with he_init, bias with zeros
-    std::vector<float> h_filter(filter_size);
+    std::vector<float> h_filter(layer.filter_size);
     std::vector<float> h_bias(num_filters, 0.0f);
 
     int fan_in = in_c * kernel_size * kernel_size;
     he_init(h_filter, fan_in, seed); 
 
-    CHECK_CUDA(cudaMemcpy(layer.d_filter, h_filter.data(), filter_size * sizeof(float),
+    CHECK_CUDA(cudaMemcpy(layer.d_filter, h_filter.data(), layer.filter_size * sizeof(float),
                             cudaMemcpyHostToDevice));
     CHECK_CUDA(cudaMemcpy(layer.d_bias, h_bias.data(), num_filters * sizeof(float),
                             cudaMemcpyHostToDevice));
@@ -373,6 +374,24 @@ void backward_conv_layer(cudnnHandle_t cudnn, convLayer& layer, float* d_input,
         &beta_overwrite,
         layer.input_desc, layer.d_grad_input //dx
     ));
+}
+
+void update_conv_layer(convLayer& layer, float lr){
+    const int threads = 256;
+    
+    // 1. Filter update — layer.filter_size elements (K*C*R*S)
+    int filter_blocks = (layer.filter_size + threads - 1) / threads;
+    sgd_update_kernel<<<filter_blocks, threads>>>(layer.d_filter, layer.d_grad_filter,
+                                                  lr, layer.filter_size);
+    
+    CHECK_CUDA(cudaGetLastError());
+
+    // 2. Bias update — one bias per output channel
+    int bias_blocks = (layer.out_c + threads - 1) / threads;
+    sgd_update_kernel<<<bias_blocks, threads>>>(layer.d_bias, layer.d_grad_bias,
+                                                lr, layer.out_c);
+    
+    CHECK_CUDA(cudaGetLastError());
 }
 
 // =========================================================
