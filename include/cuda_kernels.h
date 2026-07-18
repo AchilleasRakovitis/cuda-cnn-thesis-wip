@@ -16,3 +16,5 @@ __global__ void loss_backward_kernel(const float* d_logprobs, const uint8_t* d_l
 
 __global__ void bias_backward_kernel(const float* d_grad_output, float* d_grad_bias,
                                      int batch_size, int out_features);
+
+__global__ void sgd_update_kernel(float* params, const float* grads, float lr, int size);

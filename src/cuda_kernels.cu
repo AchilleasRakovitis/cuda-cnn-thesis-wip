@@ -91,3 +91,17 @@ __global__ void bias_backward_kernel(const float* d_grad_output, float* d_grad_b
         d_grad_bias[o] = sum;
     }
 }
+
+// SGD parameter update: w -= lr * dW, applied element-wise.
+// One thread per parameter. Shape-agnostic — the same kernel updates conv filters
+// [K,C,R,S], FC weight matrices [O,I] and bias vectors [O], because the update is
+// per-element and a gradient always has the same size as the tensor it grades.
+// The minus is gradient DESCENT: the gradient points toward increasing loss, so we
+// step against it.
+__global__ void sgd_update_kernel(float* params, const float* grads, float lr, int size){
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(idx < size){
+        params[idx] -= lr * grads[idx];
+    }
+}
