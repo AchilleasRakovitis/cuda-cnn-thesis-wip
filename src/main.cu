@@ -220,6 +220,32 @@ int main(){
     gradient_check(cudnn, cublas, layer1, layer2, layer3, fc1, fc2, fc3, loss,
                    d_input, d_labels, d_workspace, h_loss, 7, 1e-3f);
 
+
+    //SGD UPDATE w(new) = w(old) - lr * dW
+    const float lr = 0.01f;
+    update_conv_layer(layer1, lr);
+    update_conv_layer(layer2, lr);
+    update_conv_layer(layer3, lr);
+    update_fc_layer(fc1, lr);
+    update_fc_layer(fc2, lr);
+    update_fc_layer(fc3, lr);
+
+    // Verify the step went downhill: re-run forward and compare the loss
+    forward_layer(cudnn, layer1, d_input, d_workspace);
+    forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
+    forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
+    forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
+    forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
+    forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
+    forward_loss_layer(cudnn, loss, fc3.d_output, d_labels);
+
+    float loss_after;
+    CHECK_CUDA(cudaMemcpy(&loss_after, loss.d_final_loss, sizeof(float), cudaMemcpyDeviceToHost));
+    std::cout << "\n=== SGD STEP ===" << std::endl;
+    std::cout << "  loss before = " << h_loss     << std::endl;
+    std::cout << "  loss after  = " << loss_after << std::endl;
+    std::cout << "  change      = " << (loss_after - h_loss) << "  (want negative)" << std::endl;
+
     // =========================================================
     // Timing the full forward pass
     // =========================================================
