@@ -22,6 +22,7 @@
 #include "common.h"
 #include "fc_layer.h"
 #include "loss_layer.h"
+#include "gradcheck.h"
 
 int main(){
     
@@ -215,6 +216,9 @@ int main(){
     print_gpu_tensor("conv3 grad filter", layer3.d_grad_filter, 10);
     print_gpu_tensor("conv3 grad bias", layer3.d_grad_bias, 10);
     print_gpu_tensor("conv1 grad filter", layer1.d_grad_filter, 10);
+
+    gradient_check(cudnn, cublas, layer1, layer2, layer3, fc1, fc2, fc3, loss,
+                   d_input, d_labels, d_workspace, h_loss, 7, 1e-3f);
 
     // =========================================================
     // Timing the full forward pass
