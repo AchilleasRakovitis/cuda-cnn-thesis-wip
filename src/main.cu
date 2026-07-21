@@ -158,36 +158,36 @@ int main(){
 
     //Layer 1: input -> layer1.d_pool_out
     forward_layer(cudnn, layer1, d_input, d_workspace);
-    print_gpu_tensor("Layer 1 output", layer1.d_pool_out,
-                     layer1.pool_n * layer1.pool_c * layer1.pool_h * layer1.pool_w);
+    //print_gpu_tensor("Layer 1 output", layer1.d_pool_out,
+      //               layer1.pool_n * layer1.pool_c * layer1.pool_h * layer1.pool_w);
     
     //Layer 2: layer1 output -> layer2.d_pool_out
     forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
-    print_gpu_tensor("Layer 2 output", layer2.d_pool_out,
-                     layer2.pool_n * layer2.pool_c * layer2.pool_h * layer2.pool_w);
+    //print_gpu_tensor("Layer 2 output", layer2.d_pool_out,
+      //               layer2.pool_n * layer2.pool_c * layer2.pool_h * layer2.pool_w);
 
     //Layer 3: layer2 output -> layer3.d_pool_out
     forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
-    print_gpu_tensor("Layer 3 output", layer3.d_pool_out,
-                     layer3.pool_n * layer3.pool_c * layer3.pool_h * layer3.pool_w);
+    //print_gpu_tensor("Layer 3 output", layer3.d_pool_out,
+      //               layer3.pool_n * layer3.pool_c * layer3.pool_h * layer3.pool_w);
 
     
     // FC1: layer3 output (flattened to [N, 1024]) → fc1.d_output [N, 512]
     forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
-    print_gpu_tensor("FC1 output", fc1.d_output, in_n * fc1.out_features);
+    //print_gpu_tensor("FC1 output", fc1.d_output, in_n * fc1.out_features);
     
     // FC2: fc1 output[N, 512] -> fc2 output[N, 256]
     forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
-    print_gpu_tensor("FC2 output", fc2.d_output, in_n * fc2.out_features);
+    //print_gpu_tensor("FC2 output", fc2.d_output, in_n * fc2.out_features);
 
     // FC3: fc2 output[N, 256] -> fc3 output[N, 10] (logits)
     forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
-    print_gpu_tensor("FC3 output", fc3.d_output, in_n * fc3.out_features);
+    //print_gpu_tensor("FC3 output", fc3.d_output, in_n * fc3.out_features);
 
     // Loss Layer: logits[N 10] ->  
     forward_loss_layer(cudnn, loss, fc3.d_output, d_labels);
-    print_gpu_tensor("Log-probs (first 10)", loss.d_logprobs, 10);
-    print_gpu_tensor("Per-sample losses (first 10)", loss.d_losses_per_sample, 10);
+    //print_gpu_tensor("Log-probs (first 10)", loss.d_logprobs, 10);
+    //print_gpu_tensor("Per-sample losses (first 10)", loss.d_losses_per_sample, 10);
 
     float h_loss;
     cudaMemcpy(&h_loss, loss.d_final_loss, sizeof(float), cudaMemcpyDeviceToHost);
@@ -195,7 +195,7 @@ int main(){
     
     // --- Backward Pass (Wave 3a): loss gradient dz = (p - y)/N ---
     backward_loss_layer(loss, d_labels);
-    print_gpu_tensor("Grad logits (first 10)", loss.d_grad_logits, 10);
+    //print_gpu_tensor("Grad logits (first 10)", loss.d_grad_logits, 10);
 
     //Backward through the FC Layers
     //Each layer gets the input that it have in forward, the gradient from infront
@@ -203,9 +203,11 @@ int main(){
     backward_fc_layer(cudnn, cublas, fc2, fc1.d_output, fc3.d_grad_input);
     backward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out, fc2.d_grad_input);
 
+    /*
     print_gpu_tensor("FC3 grad weights", fc3.d_grad_weights, 10);
     print_gpu_tensor("FC3 grad bias",    fc3.d_grad_bias,    10);
     print_gpu_tensor("FC1 grad input",   fc1.d_grad_input,   10);
+        */
 
     //Backward through the FC Layers
     //Each layers gets its forward input and the gradient arriving back to front
@@ -213,38 +215,53 @@ int main(){
     backward_conv_layer(cudnn, layer2, layer1.d_pool_out, layer3.d_grad_input, d_workspace);
     backward_conv_layer(cudnn, layer1, d_input, layer2.d_grad_input, d_workspace);
 
+    /*
     print_gpu_tensor("conv3 grad filter", layer3.d_grad_filter, 10);
     print_gpu_tensor("conv3 grad bias", layer3.d_grad_bias, 10);
     print_gpu_tensor("conv1 grad filter", layer1.d_grad_filter, 10);
+    */
 
-    gradient_check(cudnn, cublas, layer1, layer2, layer3, fc1, fc2, fc3, loss,
-                   d_input, d_labels, d_workspace, h_loss, 7, 1e-3f);
+    // ===== OVERFIT TEST: memorize a single batch =====
+    // Train repeatedly on the SAME 64 images. With nothing else to fit, the network
+    // should drive the loss toward zero by memorizing them — proving forward, loss,
+    // backward and update all work correctly and repeatedly.
+    const int   num_steps = 1000;
+    const float lr        = 0.05f;
 
+    std::cout << "\n=== OVERFIT TEST (" << num_steps << " steps, lr=" << lr << ") ===" << std::endl;
 
-    //SGD UPDATE w(new) = w(old) - lr * dW
-    const float lr = 0.01f;
-    update_conv_layer(layer1, lr);
-    update_conv_layer(layer2, lr);
-    update_conv_layer(layer3, lr);
-    update_fc_layer(fc1, lr);
-    update_fc_layer(fc2, lr);
-    update_fc_layer(fc3, lr);
+    for (int step = 0; step < num_steps; step++) {
 
-    // Verify the step went downhill: re-run forward and compare the loss
-    forward_layer(cudnn, layer1, d_input, d_workspace);
-    forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
-    forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
-    forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
-    forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
-    forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
-    forward_loss_layer(cudnn, loss, fc3.d_output, d_labels);
+        forward_layer(cudnn, layer1, d_input, d_workspace);
+        forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
+        forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
+        forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
+        forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
+        forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
+        forward_loss_layer(cudnn, loss, fc3.d_output, d_labels);
 
-    float loss_after;
-    CHECK_CUDA(cudaMemcpy(&loss_after, loss.d_final_loss, sizeof(float), cudaMemcpyDeviceToHost));
-    std::cout << "\n=== SGD STEP ===" << std::endl;
-    std::cout << "  loss before = " << h_loss     << std::endl;
-    std::cout << "  loss after  = " << loss_after << std::endl;
-    std::cout << "  change      = " << (loss_after - h_loss) << "  (want negative)" << std::endl;
+        backward_loss_layer(loss, d_labels);
+        backward_fc_layer(cudnn, cublas, fc3, fc2.d_output,      loss.d_grad_logits);
+        backward_fc_layer(cudnn, cublas, fc2, fc1.d_output,      fc3.d_grad_input);
+        backward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out, fc2.d_grad_input);
+        backward_conv_layer(cudnn, layer3, layer2.d_pool_out, fc1.d_grad_input,    d_workspace);
+        backward_conv_layer(cudnn, layer2, layer1.d_pool_out, layer3.d_grad_input, d_workspace);
+        backward_conv_layer(cudnn, layer1, d_input,           layer2.d_grad_input, d_workspace);
+
+        update_conv_layer(layer1, lr);
+        update_conv_layer(layer2, lr);
+        update_conv_layer(layer3, lr);
+        update_fc_layer(fc1, lr);
+        update_fc_layer(fc2, lr);
+        update_fc_layer(fc3, lr);
+
+        if (step % 10 == 0 || step == num_steps - 1) {
+            float step_loss;
+            CHECK_CUDA(cudaMemcpy(&step_loss, loss.d_final_loss, sizeof(float),
+                                  cudaMemcpyDeviceToHost));
+            std::cout << "  step " << step << "  loss = " << step_loss << std::endl;
+        }
+    }
 
     // =========================================================
     // Timing the full forward pass
