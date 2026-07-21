@@ -241,46 +241,58 @@ int main(){
     print_gpu_tensor("conv1 grad filter", layer1.d_grad_filter, 10);
     */
 
-    // ===== OVERFIT TEST: memorize a single batch =====
-    // Train repeatedly on the SAME 64 images. With nothing else to fit, the network
-    // should drive the loss toward zero by memorizing them — proving forward, loss,
-    // backward and update all work correctly and repeatedly.
-    const int   num_steps = 1000;
-    const float lr        = 0.05f;
+   // ===== TRAINING LOOP =====
+    const int   num_epochs = 5;
+    const float lr         = 0.01f;
 
-    std::cout << "\n=== OVERFIT TEST (" << num_steps << " steps, lr=" << lr << ") ===" << std::endl;
+    std::cout << "\n=== TRAINING (" << num_epochs << " epochs, "
+              << num_batches << " batches/epoch, lr=" << lr << ") ===" << std::endl;
 
-    for (int step = 0; step < num_steps; step++) {
+    for (int epoch = 0; epoch < num_epochs; epoch++) {
 
-        forward_layer(cudnn, layer1, d_input, d_workspace);
-        forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
-        forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
-        forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
-        forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
-        forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
-        forward_loss_layer(cudnn, loss, fc3.d_output, d_labels);
+        float epoch_loss = 0.0f;
 
-        backward_loss_layer(loss, d_labels);
-        backward_fc_layer(cudnn, cublas, fc3, fc2.d_output,      loss.d_grad_logits);
-        backward_fc_layer(cudnn, cublas, fc2, fc1.d_output,      fc3.d_grad_input);
-        backward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out, fc2.d_grad_input);
-        backward_conv_layer(cudnn, layer3, layer2.d_pool_out, fc1.d_grad_input,    d_workspace);
-        backward_conv_layer(cudnn, layer2, layer1.d_pool_out, layer3.d_grad_input, d_workspace);
-        backward_conv_layer(cudnn, layer1, d_input,           layer2.d_grad_input, d_workspace);
+        for (int b = 0; b < num_batches; b++) {
 
-        update_conv_layer(layer1, lr);
-        update_conv_layer(layer2, lr);
-        update_conv_layer(layer3, lr);
-        update_fc_layer(fc1, lr);
-        update_fc_layer(fc2, lr);
-        update_fc_layer(fc3, lr);
+            // This batch's slice of the dataset — pointer arithmetic, no copying
+            float*   batch_images = d_train_images + (size_t)b * in_n * image_size;
+            uint8_t* batch_labels = d_train_labels + (size_t)b * in_n;
 
-        if (step % 10 == 0 || step == num_steps - 1) {
-            float step_loss;
-            CHECK_CUDA(cudaMemcpy(&step_loss, loss.d_final_loss, sizeof(float),
+            // --- forward ---
+            forward_layer(cudnn, layer1, batch_images, d_workspace);
+            forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
+            forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
+            forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
+            forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
+            forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
+            forward_loss_layer(cudnn, loss, fc3.d_output, batch_labels);
+
+            // --- backward ---
+            backward_loss_layer(loss, batch_labels);
+            backward_fc_layer(cudnn, cublas, fc3, fc2.d_output,      loss.d_grad_logits);
+            backward_fc_layer(cudnn, cublas, fc2, fc1.d_output,      fc3.d_grad_input);
+            backward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out, fc2.d_grad_input);
+            backward_conv_layer(cudnn, layer3, layer2.d_pool_out, fc1.d_grad_input,    d_workspace);
+            backward_conv_layer(cudnn, layer2, layer1.d_pool_out, layer3.d_grad_input, d_workspace);
+            backward_conv_layer(cudnn, layer1, batch_images,      layer2.d_grad_input, d_workspace);
+
+            // --- update ---
+            update_conv_layer(layer1, lr);
+            update_conv_layer(layer2, lr);
+            update_conv_layer(layer3, lr);
+            update_fc_layer(fc1, lr);
+            update_fc_layer(fc2, lr);
+            update_fc_layer(fc3, lr);
+
+            // --- accumulate this batch's loss ---
+            float batch_loss;
+            CHECK_CUDA(cudaMemcpy(&batch_loss, loss.d_final_loss, sizeof(float),
                                   cudaMemcpyDeviceToHost));
-            std::cout << "  step " << step << "  loss = " << step_loss << std::endl;
+            epoch_loss += batch_loss;
         }
+
+        std::cout << "  epoch " << epoch
+                  << "  avg loss = " << (epoch_loss / num_batches) << std::endl;
     }
 
     // =========================================================
