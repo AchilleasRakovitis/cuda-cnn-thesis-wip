@@ -61,13 +61,33 @@ int main(){
     std::vector<float> pixels;
     std::vector<uint8_t> labels;
 
-    load_cifar10_batch("cifar-10-batches-bin/data_batch_1.bin", pixels, labels);
+    load_cifar10_train("cifar-10-batches-bin", pixels, labels);
+    
+    const int num_train = labels.size(); // 50.000
+    const int image_size = in_c * in_h * in_w;  // 3072
+    const int num_batches = num_train / in_n; // 781 batches of 64 images
 
-    CHECK_CUDA(cudaMemcpy(d_input, pixels.data(), input_size * sizeof(float),
-                        cudaMemcpyHostToDevice));
+    std::cout << "Loaded: " << num_train << " training images (" << num_batches
+                            << " batches of " << in_n << ")" << std::endl;
 
-    CHECK_CUDA(cudaMemcpy(d_labels, labels.data(), in_n * sizeof(uint8_t),
-                            cudaMemcpyHostToDevice));
+    //Load the whole dataset on the GPU
+    float* d_train_images;
+    uint8_t* d_train_labels;
+    
+    CHECK_CUDA(cudaMalloc(&d_train_images, (size_t)num_train * image_size * sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&d_train_labels, num_train * sizeof(uint8_t)));
+
+    CHECK_CUDA(cudaMemcpy(d_train_images, pixels.data(), (size_t)num_train * image_size * sizeof(float),
+                          cudaMemcpyHostToDevice));
+
+    CHECK_CUDA(cudaMemcpy(d_train_labels, labels.data(), num_train * sizeof(uint8_t),
+                          cudaMemcpyHostToDevice));
+
+    CHECK_CUDA(cudaMemcpy(d_input, d_train_images, input_size * sizeof(float),
+                          cudaMemcpyDeviceToDevice));
+    
+    CHECK_CUDA(cudaMemcpy(d_labels, d_train_labels, in_n * sizeof(uint8_t),
+                          cudaMemcpyDeviceToDevice));
 
     std::cout << "First 5 labels in batch: ";
     for (int i = 0; i < 5; i++) std::cout << static_cast<int>(labels[i]) << " ";
