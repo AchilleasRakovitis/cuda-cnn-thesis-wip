@@ -24,6 +24,47 @@
 #include "loss_layer.h"
 #include "gradcheck.h"
 
+
+float evaluate(cudnnHandle_t cudnn, cublasHandle_t cublas,
+               convLayer& layer1, convLayer& layer2, convLayer& layer3,
+               fcLayer& fc1, fcLayer& fc2, fcLayer& fc3,
+               float* d_test_images, const std::vector<uint8_t>& test_labels,
+               int num_test, int in_n, int image_size, void* d_workspace){
+
+    int correct = 0;
+    const int test_batches = num_test / in_n;
+    std::vector<float> h_logits(in_n * fc3.out_features);
+
+    for (int b = 0; b < test_batches; b++) {
+        float* batch_images = d_test_images + (size_t)b * in_n * image_size;
+
+        forward_layer(cudnn, layer1, batch_images, d_workspace);
+        forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
+        forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
+        forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
+        forward_fc_layer(cudnn, cublas, fc2, fc1.d_output);
+        forward_fc_layer(cudnn, cublas, fc3, fc2.d_output);
+
+        CHECK_CUDA(cudaMemcpy(h_logits.data(), fc3.d_output,
+                              in_n * fc3.out_features * sizeof(float),
+                              cudaMemcpyDeviceToHost));
+
+        for (int i = 0; i < in_n; i++) {
+            int   best_class = 0;
+            float best_logit = h_logits[i * fc3.out_features + 0];
+            for (int c = 1; c < fc3.out_features; c++) {
+                if (h_logits[i * fc3.out_features + c] > best_logit) {
+                    best_logit = h_logits[i * fc3.out_features + c];
+                    best_class = c;
+                }
+            }
+            if (best_class == test_labels[b * in_n + i]) correct++;
+        }
+    }
+
+    return 100.0f * correct / (test_batches * in_n);   // accuracy %
+}
+
 int main(){
     
     cudnnHandle_t cudnn;
@@ -88,6 +129,17 @@ int main(){
     
     CHECK_CUDA(cudaMemcpy(d_labels, d_train_labels, in_n * sizeof(uint8_t),
                           cudaMemcpyDeviceToDevice));
+
+    std::vector<float> test_pixels;
+    std::vector<uint8_t> test_labels;
+    load_cifar10_test("cifar-10-batches-bin", test_pixels, test_labels);
+
+    const int num_test = test_labels.size(); // 10.000
+
+    float* d_test_images;
+    CHECK_CUDA(cudaMalloc(&d_test_images, (size_t)num_test * image_size * sizeof(float)));
+    CHECK_CUDA(cudaMemcpy(d_test_images, test_pixels.data(), (size_t)num_test * image_size * sizeof(float),
+                          cudaMemcpyHostToDevice));
 
     std::cout << "First 5 labels in batch: ";
     for (int i = 0; i < 5; i++) std::cout << static_cast<int>(labels[i]) << " ";
@@ -242,7 +294,7 @@ int main(){
     */
 
    // ===== TRAINING LOOP =====
-    const int   num_epochs = 5;
+    const int   num_epochs = 20;
     const float lr         = 0.01f;
 
     std::cout << "\n=== TRAINING (" << num_epochs << " epochs, "
@@ -291,8 +343,12 @@ int main(){
             epoch_loss += batch_loss;
         }
 
+        float acc = evaluate(cudnn, cublas, layer1, layer2, layer3, fc1, fc2, fc3, 
+                             d_test_images, test_labels, num_test, in_n, image_size, d_workspace);
+
         std::cout << "  epoch " << epoch
-                  << "  avg loss = " << (epoch_loss / num_batches) << std::endl;
+                  << "  avg loss = " << (epoch_loss / num_batches) 
+                  <<  "  test acc = " << acc << "%" << std::endl << std::endl;
     }
 
     // =========================================================
