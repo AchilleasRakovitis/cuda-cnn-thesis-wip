@@ -129,7 +129,9 @@ convLayer create_layer(cudnnHandle_t cudnn, int in_n, int in_c, int in_h,
         perf.data()
     ));
 
-    layer.algo = perf[0].algo;
+
+    //layer.algo = perf[0].algo;    // Find* — nondeterministic, kept for reference (thesis finding)
+    layer.algo = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
 
     CHECK_CUDNN(cudnnGetConvolutionForwardWorkspaceSize(
         cudnn,
