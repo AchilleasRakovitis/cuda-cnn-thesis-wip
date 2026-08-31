@@ -1,5 +1,7 @@
 #pragma once
 
+#include "conv_layer.h"
+
 //Struct to group the dimensions of the convolution layer together
 struct ConvDims{
     int N; // batch size (64)
@@ -17,3 +19,5 @@ void launch_conv_naive(const float* d_input, const float* d_filter, float* d_out
 
 __global__ void conv_forward_naive_kernel(const float* __restrict__ input, const float* __restrict__ filter,
                                           float* __restrict__ output, ConvDims d);
+
+void verify_conv_naive(cudnnHandle_t cudnn, convLayer& layer, float* d_input, void* d_workspace);

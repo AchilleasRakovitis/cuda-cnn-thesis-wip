@@ -23,6 +23,7 @@
 #include "fc_layer.h"
 #include "loss_layer.h"
 #include "gradcheck.h"
+#include "conv_kernels.h"
 
 
 float evaluate(cudnnHandle_t cudnn, cublasHandle_t cublas,
@@ -223,6 +224,8 @@ int main(){
     if(max_ws > 0) CHECK_CUDA(cudaMalloc(&d_workspace, max_ws));
     std::cout << "\nShared workspace: " << max_ws << " bytes" << std::endl;
 
+    verify_conv_naive(cudnn, layer1, d_input, d_workspace);
+
     // =========================================================
     // Forward pass through all 3 layers
     // =========================================================
@@ -233,10 +236,14 @@ int main(){
     //print_gpu_tensor("Layer 1 output", layer1.d_pool_out,
       //               layer1.pool_n * layer1.pool_c * layer1.pool_h * layer1.pool_w);
     
+    verify_conv_naive(cudnn, layer2, layer1.d_pool_out, d_workspace);
+
     //Layer 2: layer1 output -> layer2.d_pool_out
     forward_layer(cudnn, layer2, layer1.d_pool_out, d_workspace);
     //print_gpu_tensor("Layer 2 output", layer2.d_pool_out,
       //               layer2.pool_n * layer2.pool_c * layer2.pool_h * layer2.pool_w);
+
+    verify_conv_naive(cudnn, layer3, layer2.d_pool_out, d_workspace);
 
     //Layer 3: layer2 output -> layer3.d_pool_out
     forward_layer(cudnn, layer3, layer2.d_pool_out, d_workspace);
