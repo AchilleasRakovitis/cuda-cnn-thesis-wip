@@ -13,55 +13,75 @@ first milestone not marked DONE.
 ## Baseline (pinned, sm_75)
 - Forward algo pinned to CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM
 - All 3 layers report fwd algo=1 (was 0/6/0 via nondeterministic Find*)
-- Build now targets -arch=sm_75 (was defaulting to sm_52 / JIT)
+- Build targets -arch=sm_75 and -std=c++14
 - Test acc: ~67% (small run-to-run variation is FP-order noise, expected)
-- Full forward timing: 0.191 ms/pass
-  NOTE: whole forward (convs + bias + ReLU + pool + FC). Per-layer conv
-  timing is still needed for fair comparison — that is M2.
 
 ## Milestones
 - [DONE] M0  Pin cuDNN algo — stable baseline (5%)
 - [DONE] M1  Naive direct conv kernel + verification (20%)
-- [ ]    M2  Benchmark harness: per-layer conv timing, CSV, tolerance compare (30%)
+- [DONE] M2  Benchmark harness: per-layer conv timing, CSV, tolerance compare (30%)
 - [ ]    M3  Shared-memory tiled (tile + halo in shared) (45%)
 - [ ]    M4  Register tiled (multiple outputs/thread, occupancy check) (60%)
 - [ ]    M5  Lopes techniques: AI>=AG derivation, float4 loads, ptxas verify (72%)
 - [ ]    M6  Mutex / T0 split (partial-sum accumulation) (85%)
 - [ ]    M7  Layer sweep + writeup data (VGG/ResNet shapes, final tables) (100%)
 
-## Current: 20% (M0, M1 done)
+## Current: 30% (M0, M1, M2 done)
 
-## M1 results
-Files: include/conv_kernels.h, src/conv_kernels.cu
-- conv_forward_naive_kernel: one thread per output element (n,k,p,q)
-- Thread mapping: q,p from block/thread x,y; n = blockIdx.z / K, k = blockIdx.z % K
-- Launch: block(16,16), grid(ceil(W/16), ceil(H/16), N*K)
-- ptxas @ sm_75: 33 registers, 0 bytes smem, 0 spill stores, 0 spill loads
+## M2 results — benchmark harness
+Files: include/benchmark.h, src/benchmark.cu
 
-Verification vs cuDNN (verify_conv_naive), all three layers:
-| Layer | Shape          | Elements  | max abs diff | Verdict |
-|-------|----------------|-----------|--------------|---------|
-| L1    | [64,16,32,32]  | 1,048,576 | 0.000e+00    | PASS    |
-| L2    | [64,32,16,16]  |   524,288 | 0.000e+00    | PASS    |
-| L3    | [64,64, 8, 8]  |   262,144 | 0.000e+00    | PASS    |
+Design:
+- enum ConvImpl { CONV_CUDNN, CONV_NAIVE, CONV_IMPL_COUNT } selects which
+  implementation is timed; adding a kernel later = one enum value + one switch case.
+- run_conv_once(): fires one convolution (cuDNN or naive), no sync inside — the
+  only synchronisation is the timing event, so measurement is not disturbed.
+- bench_conv(): warmup (20) discarded, then 100 timed iterations, each wrapped in
+  its own CUDA events; results sorted for median and min. GFLOP/s and %peak
+  computed from FLOPs = 2*N*K*H*W*C*R*S against 16300 GFLOP/s (TITAN RTX FP32).
+- run_all_benchmarks(): loops 3 layers x all impls, prints a table and writes
+  benchmark_results.csv (for LaTeX tables). Called from main.cu behind a
+  RUN_BENCHMARK flag with early return, so it does not run the training loop.
 
-Exact (bit-for-bit) agreement across 1,835,008 elements. The naive kernel
-accumulates in the same c→r→s order as IMPLICIT_PRECOMP_GEMM, so no
-floating-point reordering occurs. L3 is the important case: output is 8x8
-while the block is 16x16, so 192 of 256 threads exit at the bounds guard —
-this exercises the guard that L1/L2 do not.
+First results (single run, median ms):
+| Layer | cuDNN | naive | naive slowdown |
+|-------|-------|-------|----------------|
+| L1 (C=3)  | 0.067 | 0.078 | 1.17x |
+| L2 (C=16) | 0.070 | 0.178 | 2.56x |
+| L3 (C=32) | 0.092 | 0.404 | 4.38x |
+
+Interpretation: naive slowdown grows with input channel count (3 -> 16 -> 32),
+because naive re-reads each operand from global memory C times with no reuse —
+exactly the arithmetic-intensity argument, measured. Even cuDNN reaches only
+5-13% of peak (3x3 conv on small images is memory-bound). naive is stable
+(median ~ min); cuDNN shows more run-to-run variance, which justifies using the
+median. NOTE: cuDNN numbers need a stability re-check (L2 median > L3 median is
+suspicious; likely shared-server noise).
 
 ## Session PDFs produced
 - Phase2_M1_naive.pdf
+- M1_Theoria_Perilipsi.pdf (Greek study sheet)
+- Phase2_M2_benchmark.pdf  (to be added)
 
 ## Key decisions log
-- Scope C + mutex: staged progression that adopts Lopes's analytical method,
-  plus the full mutex/T0 accumulation as the faithful-reproduction piece.
+- Scope C + mutex: staged progression adopting Lopes's analytical method plus the
+  full mutex/T0 accumulation as the faithful-reproduction piece.
 - Baseline algo = IMPLICIT_PRECOMP_GEMM (closest to Lopes Y=WX', fair comparison).
-  Winograd kept separately as "cuDNN's best" number, not the main baseline.
 - Find* block kept commented in conv_layer.cu as documented nondeterminism finding.
-- ConvDims struct chosen over flat int args so tile parameters can be added in M3-M6.
-- verify_conv_naive writes to its own buffers, never to layer.d_conv_out, so it
-  has no side effects on the training pipeline.
-- Naive kernel is the degenerate case of Lopes tiling (all tile sizes = 1):
-  same arithmetic, zero reuse, everything from global memory.
+- ConvDims struct chosen over flat args so tile parameters can be added in M3-M6.
+- verify_conv_naive / benchmark write to their own buffers — no training side effects.
+- Naive kernel is the degenerate case of Lopes tiling (all tile sizes = 1).
+- Build needs -std=c++14: CUDA 11.5 + GCC 11 + cudnn.h fails to parse <functional>
+  under the default C++17 (variadic std::function signatures). Same toolchain root
+  cause as the known Thrust incompatibility.
+- benchmark.cu is host-only code with .cu extension; median (not mean) chosen
+  because the shared GPU server introduces outliers.
+- main.cu NOT cleaned up yet — verify calls, manual forward/backward, old full-
+  forward timing all still present. Deferred until Phase 1 implementation chapters
+  are written, so nothing described in the thesis is deleted prematurely.
+
+## Deferred (after implementation chapters written)
+- Clean up main.cu (remove debug forward/backward, old timing, gate verify calls).
+- Refactor: make run_conv_once the single call site, so verify_conv_naive stops
+  duplicating the cudnnConvolutionForward call.
+- Possibly increase iters / add percentiles for more stable cuDNN numbers.

@@ -24,6 +24,7 @@
 #include "loss_layer.h"
 #include "gradcheck.h"
 #include "conv_kernels.h"
+#include "benchmark.h"
 
 
 float evaluate(cudnnHandle_t cudnn, cublasHandle_t cublas,
@@ -252,6 +253,11 @@ int main(){
     //print_gpu_tensor("Layer 3 output", layer3.d_pool_out,
       //               layer3.pool_n * layer3.pool_c * layer3.pool_h * layer3.pool_w);
 
+    const bool RUN_BENCHMARK = true;
+    if(RUN_BENCHMARK){
+        run_all_benchmarks(cudnn, layer1, layer2, layer3, d_input, d_workspace);
+        return 0;
+    }  
     
     // FC1: layer3 output (flattened to [N, 1024]) → fc1.d_output [N, 512]
     forward_fc_layer(cudnn, cublas, fc1, layer3.d_pool_out);
