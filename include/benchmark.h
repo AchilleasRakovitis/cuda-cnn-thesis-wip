@@ -7,6 +7,7 @@
 enum ConvImpl{
     CONV_CUDNN = 0,
     CONV_NAIVE,
+    CONV_TILED,
     //REST
     CONV_IMPL_COUNT
 };
