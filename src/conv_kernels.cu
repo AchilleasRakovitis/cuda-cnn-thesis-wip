@@ -3,6 +3,16 @@
 #include <vector>
 #include <cstdio>
 
+//--- M3 shared-tiled constants ---
+#define TILED_BLK 16 // threads per block dimension
+#define TILED_SH 18 // shared tile = TILED_BLK + R - 1 (16 + 3 - 1)
+
+//--- M4 register tiled constants ---
+#define REG_TPT 2 // outputs per thread, per dimension (2x2 block)
+#define REG_BLK 16 // threads per block dimension
+#define REG_OUT 32 // output tile per block = REG_BLK * REG_TPT
+#define REG_SH 34 // shared tile = REG_OUT + R - 1 (32 + 3 - 1)
+
 // Naive direct convolution, forward pass.
 //
 // Computes, for every output element:
@@ -224,7 +234,7 @@ __global__ void conv_forward_tiled_kernel(const float* __restrict__ input, const
                                           float* __restrict__ output, ConvDims d){
 
     // assigns an index to each element while flattening from 2d to 1d
-    int flat_id = threadIdx.y * 16 + threadIdx.x;
+    int flat_id = threadIdx.y * TILED_BLK + threadIdx.x;
     
     // thread index for the output pixels, q = col, p = row
     int q = blockIdx.x * blockDim.x + threadIdx.x;
@@ -235,23 +245,23 @@ __global__ void conv_forward_tiled_kernel(const float* __restrict__ input, const
     int k = blockIdx.z % d.K;
 
     // mapping where does the output tile start, needed for the shared tile
-    int out_row_start = blockIdx.y * 16;
-    int out_col_start = blockIdx.x * 16;
+    int out_row_start = blockIdx.y * TILED_BLK;
+    int out_col_start = blockIdx.x * TILED_BLK;
 
     // sum accumulator for convolution
     float acc = 0.0f;
 
     // declaring the shared memory buffer 
-    __shared__ float tile[18 * 18];
+    __shared__ float tile[TILED_SH * TILED_SH];
 
     //loading each channel seperately
     for(int c = 0; c < d.C; c++){
         
-        //load the 18x18 tile of channel c in shared memory
-        for(int idx = flat_id; idx < 18*18; idx+=256){
+        //load the shared tile of channel c in shared memory
+        for(int idx = flat_id; idx < TILED_SH * TILED_SH; idx+= TILED_BLK*TILED_BLK){
             // converting 1d into 2d for the shared tile access
-            int local_row = idx / 18;
-            int local_col = idx % 18;
+            int local_row = idx / TILED_SH;
+            int local_col = idx % TILED_SH;
             
             //going from the shared tile to the input image
             int ih = out_row_start - d.pad + local_row;
@@ -272,7 +282,7 @@ __global__ void conv_forward_tiled_kernel(const float* __restrict__ input, const
             for(int r = 0; r < d.R; r++){
                 for(int s = 0; s < d.S; s++){
                     //read from the shared buffer
-                    float in_val = tile[(threadIdx.y + r) * 18 + (threadIdx.x + s)];
+                    float in_val = tile[(threadIdx.y + r) * TILED_SH + (threadIdx.x + s)];
                     //same index flattening like in the naive for the filter
                     float w_val = filter[((k * d.C + c) * d.R + r) * d.S + s];
                     //conv MAC computation
@@ -293,8 +303,8 @@ __global__ void conv_forward_tiled_kernel(const float* __restrict__ input, const
 
 void launch_conv_tiled(const float* d_input, const float* d_filter, float* d_output, const ConvDims& d){
     
-    dim3 block(16, 16);
-    dim3 grid( (d.W + 15) / 16, (d.H + 15) / 16, d.N * d.K);
+    dim3 block(TILED_BLK, TILED_BLK);
+    dim3 grid( (d.W + TILED_BLK - 1) / TILED_BLK, (d.H + TILED_BLK - 1) / TILED_BLK, d.N * d.K);
 
     conv_forward_tiled_kernel<<<grid, block>>>(d_input, d_filter, d_output, d);
 }
