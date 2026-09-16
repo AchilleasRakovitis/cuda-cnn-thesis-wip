@@ -13,6 +13,8 @@ const char* conv_impl_name(ConvImpl impl){
         return "naive";
     case CONV_TILED:
         return "tiled";
+    case CONV_REGTILED:
+        return "regtiled";
     default:
         return "unknown";
     }
@@ -49,6 +51,8 @@ static void run_conv_once(cudnnHandle_t cudnn, convLayer& layer, ConvImpl impl,
         break;
     case CONV_TILED:
         launch_conv_tiled(d_input, layer.d_filter, d_out, d);
+    case CONV_REGTILED:
+        launch_conv_regtiled(d_input, layer.d_filter, d_out, d);
     default:
         break;
     }

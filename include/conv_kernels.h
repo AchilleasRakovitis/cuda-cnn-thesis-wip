@@ -29,3 +29,10 @@ __global__ void conv_forward_tiled_kernel(const float* __restrict__ input, const
                                           float* __restrict__ output, ConvDims d);
 
 void verify_conv_tiled(cudnnHandle_t cudnn, convLayer& layer, float* d_input, void* d_workspace);
+
+void launch_conv_regtiled(const float* d_input, const float* d_filter, float* d_output, const ConvDims& d);
+
+__global__ void conv_forward_regtiled_kernel(const float* __restrict__ input, const float* __restrict__ filter,
+                                             float* __restrict__ output, ConvDims d);
+
+void verify_conv_regtiled(cudnnHandle_t cudnn, convLayer& layer, float* d_input, void* d_workspace);

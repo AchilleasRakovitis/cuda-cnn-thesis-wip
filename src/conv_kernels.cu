@@ -392,3 +392,148 @@ void verify_conv_tiled(cudnnHandle_t cudnn, convLayer& layer, float* d_input, vo
     CHECK_CUDA(cudaFree(d_cudnn));
     CHECK_CUDA(cudaFree(d_tiled));
 }
+
+__global__ void conv_forward_regtiled_kernel(const float* __restrict__ input, const float* __restrict__ filter,
+                                             float* __restrict__ output, ConvDims d){
+
+    int flat_id = threadIdx.y * REG_BLK + threadIdx.x;
+
+    // base output position of THIS thread's 2x2 block (in image coords)
+    int base_row = blockIdx.y * REG_OUT + threadIdx.y * REG_TPT;
+    int base_col = blockIdx.x * REG_OUT + threadIdx.x * REG_TPT;
+
+    int n = blockIdx.z / d.K;
+    int k = blockIdx.z % d.K;
+
+    //where the block's shared tile starts(in image coords), same for all threads
+    int out_row_start = blockIdx.y * REG_OUT;
+    int out_col_start = blockIdx.x * REG_OUT;
+
+    //four accumulators for the 2x2 output block
+    float acc00 = 0.0f;
+    float acc01 = 0.0f;
+    float acc10 = 0.0f;
+    float acc11 = 0.0f;
+
+    __shared__ float tile[REG_SH * REG_SH];
+
+    for(int c = 0; c < d.C; c++){
+        
+        
+        for(int idx = flat_id; idx < REG_SH * REG_SH; idx+= REG_BLK * REG_BLK){
+
+            int local_row = idx / REG_SH;
+            int local_col = idx % REG_SH;
+
+            int ih = out_row_start - d.pad + local_row;
+            int iw = out_col_start -d.pad + local_col;
+
+            if(ih >= 0 && ih < d.H && iw >= 0 && iw < d.W){
+                tile[idx] = input[((n * d.C + c) * d.H + ih) * d.W + iw];
+            }else{
+                tile[idx] = 0.0f;
+            }
+        }
+
+        __syncthreads();
+
+        for(int r = 0; r < d.R; r++){
+            for(int s = 0; s < d.S; s++){
+                //The weight is the same for every accumulator
+                float w_val = filter[((k * d.C + c) * d.R + r) * d.S + s];
+
+                // the four accumulator for the 2x2 output of each thread
+                acc00 += tile[(threadIdx.y*2 + 0 + r) * REG_SH + (threadIdx.x*2 + 0 + s)] * w_val;
+                acc01 += tile[(threadIdx.y*2 + 0 + r) * REG_SH + (threadIdx.x*2 + 1 + s)] * w_val;
+                acc10 += tile[(threadIdx.y*2 + 1 + r) * REG_SH + (threadIdx.x*2 + 0 + s)] * w_val;
+                acc11 += tile[(threadIdx.y*2 + 1 + r) * REG_SH + (threadIdx.x*2 + 1 + s)] * w_val;
+            }
+        }
+
+        __syncthreads();
+
+    }
+
+    //output (0,0) -> (base_row + 0, base_col + 0)
+    if(base_row + 0 < d.H && base_col + 0 < d.W){
+        output[((n * d.K + k) * d.H + (base_row + 0)) * d.W + (base_col + 0)] = acc00;
+    }
+
+    if(base_row + 0 < d.H && base_col + 1 < d.W){
+        output[((n * d.K + k) * d.H + (base_row + 0)) * d.W + (base_col + 1)] = acc01;
+    }
+
+    if(base_row + 1 < d.H && base_col + 0 < d.W){
+        output[((n * d.K + k) * d.H + (base_row + 1)) * d.W + (base_col + 0)] = acc10;
+    }
+
+    if(base_row + 1 < d.H && base_col + 1 < d.W){
+        output[((n * d.K + k) * d.H + (base_row + 1)) * d.W + (base_col + 1)] = acc11;
+    }
+}
+
+void launch_conv_regtiled(const float* d_input, const float* d_filter, float* d_output, const ConvDims& d){
+    dim3 block(REG_BLK, REG_BLK);
+    dim3 grid((d.W + REG_OUT - 1) / REG_OUT, (d.H + REG_OUT - 1) / REG_OUT, d.N * d.K); // ceil(W / 32)
+
+    conv_forward_regtiled_kernel<<<grid, block>>>(d_input, d_filter, d_output, d);
+}
+
+void verify_conv_regtiled(cudnnHandle_t cudnn, convLayer& layer, float* d_input, void* d_workspace){
+    int total_elements = layer.out_n * layer.out_c * layer.out_h * layer.out_w;
+    size_t total_bytes = total_elements * sizeof(float);
+
+    float* d_reg;
+    float* d_cudnn;
+    CHECK_CUDA(cudaMalloc(&d_reg, total_bytes));
+    CHECK_CUDA(cudaMalloc(&d_cudnn, total_bytes));
+
+    const float alpha = 1.0f;
+    const float beta_overwrite = 0.0f;
+
+    CHECK_CUDNN(cudnnConvolutionForward(
+        cudnn, &alpha, layer.input_desc, d_input,
+        layer.filter_desc, layer.d_filter, layer.conv_desc, layer.algo,
+        d_workspace, layer.workspace_bytes,
+        &beta_overwrite, layer.output_desc, d_cudnn));
+
+    ConvDims d;
+    d.N = layer.in_n;  d.C = layer.in_c;
+    d.H = layer.in_h;  d.W = layer.in_w;
+    d.K = layer.out_c;
+    d.R = layer.kernel_size;  d.S = layer.kernel_size;
+    d.pad = layer.kernel_size / 2;
+
+    launch_conv_regtiled(d_input, layer.d_filter, d_reg, d);
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    std::vector<float> h_cudnn(total_elements);
+    std::vector<float> h_reg(total_elements);
+    CHECK_CUDA(cudaMemcpy(h_cudnn.data(), d_cudnn, total_bytes, cudaMemcpyDeviceToHost));
+    CHECK_CUDA(cudaMemcpy(h_reg.data(), d_reg, total_bytes, cudaMemcpyDeviceToHost));
+
+    const float threshold = 1e-3f;
+    float max_abs = 0.0f, max_rel = 0.0f;
+    int max_abs_idx = -1, n_over = 0;
+
+    for(int i = 0; i < total_elements; i++){
+        const float a = h_cudnn[i];
+        const float b = h_reg[i];
+        const float abs_diff = fabsf(a-b);
+        const float rel_diff = abs_diff / (fabsf(a) + fabsf(b) + 1e-8f);
+        if(abs_diff > max_abs){ max_abs = abs_diff; max_abs_idx = i; }
+        if(rel_diff > max_rel) max_rel = rel_diff;
+        if(abs_diff > threshold) n_over++;
+    }
+
+    printf("\n=== VERIFY conv regtiled vs cuDNN ===\n");
+    printf("  shape        : [%d, %d, %d, %d]  (%d elements)\n",
+           layer.out_n, layer.out_c, layer.out_h, layer.out_w, total_elements);
+    printf("  max abs diff : %.3e  (at index %d)\n", max_abs, max_abs_idx);
+    printf("  max rel diff : %.3e\n", max_rel);
+    printf("  elems > %.0e : %d\n", threshold, n_over);
+    printf("  verdict      : %s\n", (max_abs < threshold ? "PASS" : "FAIL"));
+
+    CHECK_CUDA(cudaFree(d_cudnn));
+    CHECK_CUDA(cudaFree(d_reg));
+}
