@@ -51,8 +51,10 @@ static void run_conv_once(cudnnHandle_t cudnn, convLayer& layer, ConvImpl impl,
         break;
     case CONV_TILED:
         launch_conv_tiled(d_input, layer.d_filter, d_out, d);
+        break;
     case CONV_REGTILED:
         launch_conv_regtiled(d_input, layer.d_filter, d_out, d);
+        break;
     default:
         break;
     }
