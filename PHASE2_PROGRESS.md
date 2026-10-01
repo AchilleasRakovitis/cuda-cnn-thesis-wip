@@ -8,7 +8,7 @@
 - [ ]    M6  Mutex / T0 split (85%)
 - [ ]    M7  Layer sweep + writeup data (100%)
 
-## Current: 60% (M0-M4 done)
+## Current: 60% (M0-M4 done, M4 benchmark corrected)
 
 ## M4 results — register-tiled kernel (Lopes T4/T3)
 Files: src/conv_kernels.cu (conv_forward_regtiled_kernel, launch_conv_regtiled,
@@ -25,25 +25,41 @@ zero spills — reuse gained essentially free in occupancy. Far under Lopes 170 
 
 Verification vs cuDNN: PASS all 3 layers, max abs diff 0.000e+00 (exact).
 
-Benchmark (median ms, 2 runs, regtiled stable <2%):
-| Layer | cuDNN* | naive | tiled | regtiled | vs tiled |
-|-------|--------|-------|-------|----------|----------|
-| L1    | 0.059  | 0.078 | 0.116 | 0.035    | 3.3x faster |
-| L2    | 0.062  | 0.178 | 0.484 | 0.213    | 2.3x faster |
-| L3    | 0.071  | 0.286 | 1.118 | 0.772    | 1.4x faster |
+### BUG FIX (commit 84cef32) — M4 benchmark was wrong
+CONV_TILED case in run_conv_once had no `break` -> fell through into CONV_REGTILED.
+The "tiled" column at commit 11af971 was tiled+regtiled (e.g. L1: 0.083 + 0.035 = 0.116).
+Introduced when CONV_REGTILED was inserted after the tiled case (at M3 the fall-through
+hit `default: break` and was harmless). Verification unaffected: verify_* does not use
+run_conv_once, and regtiled wrote d_out last with a correct result.
+The 11af971 commit-message claim "beats tiled everywhere (2.3-3.3x)" is WRONG.
+
+Benchmark (median ms, corrected, single run, all impls in the same session):
+| Layer | Output | cuDNN* | naive | tiled | regtiled | vs tiled    |
+|-------|--------|--------|-------|-------|----------|-------------|
+| L1    | 32x32  | 0.057  | 0.078 | 0.083 | 0.035    | 2.3x faster |
+| L2    | 16x16  | 0.061  | 0.178 | 0.199 | 0.287    | 1.4x slower |
+| L3    | 8x8    | 0.084  | 0.405 | 0.491 | 1.083    | 2.2x slower |
 *cuDNN = pinned IMPLICIT_PRECOMP_GEMM (same algorithm class)
 
 ### FINDINGS (defence points)
-1. Register tiling beats shared tiling on EVERY layer (2.3-3.3x), 0 spills — theory confirmed.
-2. At L1, beats pinned cuDNN by 1.7x (9.8% vs 5.9% peak). HONEST FRAMING: baseline is
+1. Register tiling wins ONLY when the tile fits the layer. Idle threads per block:
+   regtiled (32x32 output tile): L1 0%, L2 75%, L3 94%
+   tiled    (16x16 output tile): L1 0%, L2 0%,  L3 75%
+   At every layer, the kernel with fewer idle threads wins. (L2: 8x8 of 16x16 threads busy
+   = 64/256 = 25%; same as counting outputs 16x16/32x32 — the 2x2/thread factor cancels.)
+2. At L1, beats pinned cuDNN by 1.6x (9.8% vs 6.0% peak). HONEST FRAMING: baseline is
    IMPLICIT_PRECOMP_GEMM, not cuDNN's fastest; Winograd would likely win; Lopes did not
    beat cuDNN overall. Correct claim: "beats cuDNN's implicit-GEMM at L1", NOT "beats cuDNN".
-3. At L3, naive still beats regtiled: 32x32 block over 8x8 output = 94% idle threads.
-   Large thread tile helps big layers, hurts small ones -> motivates M5 (analytic tile size).
+3. A fixed tile size cannot serve all layer shapes: large thread tile helps big layers,
+   hurts small ones -> motivates M5 (analytic tile size).
+4. Methodology: L2/L3 timings vary up to ~40% BETWEEN sessions (e.g. naive L3 0.286 at
+   11af971 vs 0.405 now; L1 stable). Compare only numbers from the same run. Investigate
+   (repeat runs, nvidia-smi for other jobs/clocks) before producing final tables.
 
 ## TODO next: measure cuDNN Winograd separately
 Add a WINOGRAD cuDNN entry to the benchmark to get the full picture: "vs implicit-GEMM we win,
 vs Winograd we lose by X". ~10 lines. Closes the "what about Winograd?" question definitively.
+Watch out: new switch case needs its own `break` (see bug fix above).
 
 ## Session PDFs
 - Phase2_M1_naive.pdf, M1_Theoria_Perilipsi.pdf, Phase2_M2_benchmark.pdf,
