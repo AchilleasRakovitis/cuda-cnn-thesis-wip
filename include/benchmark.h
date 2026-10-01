@@ -9,6 +9,8 @@ enum ConvImpl{
     CONV_NAIVE,
     CONV_TILED,
     CONV_REGTILED,
+    CONV_CUDNN_WINO,    // benchmark-only reference: cuDNN WINOGRAD (fused)
+    CONV_CUDNN_WINO_NONFUSED,   // benchmark-only reference: cuDNN WINOGRAD_NONFUSED
     //REST
     CONV_IMPL_COUNT
 };
@@ -23,6 +25,7 @@ struct BenchResult{
     double ms_min;
     double gflops;
     double pct_peak;
+    bool supported; // false id cudnn reports NOT_SUPPORTED for this shape
 };
 
 BenchResult bench_conv(cudnnHandle_t cudnn, convLayer& layer, int layer_id,

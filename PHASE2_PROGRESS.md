@@ -56,10 +56,36 @@ Benchmark (median ms, corrected, single run, all impls in the same session):
    11af971 vs 0.405 now; L1 stable). Compare only numbers from the same run. Investigate
    (repeat runs, nvidia-smi for other jobs/clocks) before producing final tables.
 
-## TODO next: measure cuDNN Winograd separately
-Add a WINOGRAD cuDNN entry to the benchmark to get the full picture: "vs implicit-GEMM we win,
-vs Winograd we lose by X". ~10 lines. Closes the "what about Winograd?" question definitively.
-Watch out: new switch case needs its own `break` (see bug fix above).
+## cuDNN Winograd reference (DONE)
+Files: benchmark.h/.cu — CONV_CUDNN_WINO, CONV_CUDNN_WINO_NONFUSED (benchmark-only).
+run_conv_once now takes (algo, ws, ws_bytes) as params; bench_conv sets defaults
+(pinned algo + shared ws) and, for Winograd, overrides them: algo, workspace size
+queried (status checked manually, NOT CHECK_CUDNN, so NOT_SUPPORTED is reportable),
+private cudaMalloc before warmup, freed at cleanup. Pinned baseline untouched.
+
+Benchmark (median ms, single run, same session):
+| Layer | C  | pinned | wino  | wino_nf | best ours        | ours vs best cuDNN |
+|-------|----|--------|-------|---------|------------------|--------------------|
+| L1    | 3  | 0.058  | 0.081 | 0.126   | regtiled 0.035   | 1.6x faster        |
+| L2    | 16 | 0.062  | 0.047 | 0.074   | tiled 0.200      | 4.2x slower        |
+| L3    | 32 | 0.084  | 0.056 | 0.055   | naive 0.404      | 7.3x slower        |
+All Winograd variants supported on all 3 layers.
+
+### FINDINGS (defence points)
+1. Winograd beats implicit-GEMM at L2/L3 (1.3-1.5x), below Lavin's 2.25x: transforms cost.
+2. At L1 (C=3) Winograd is SLOWER than implicit-GEMM. Saving = 20 mults per input channel
+   per 2x2 tile (scales with C); transform cost is ~fixed -> at C=3 they cancel out.
+   Stage-2 GEMM with inner dim C=3 is also inefficient. wino_nf worst (global-memory round trips).
+3. At L1 regtiled beats all 3 measured cuDNN algos. HONEST FRAMING: "faster than the
+   cuDNN algorithms measured" — FFT/GEMM not timed; NOT "faster than cuDNN".
+4. Prediction for M7: at C=256/512 (VGG) Winograd advantage should approach 2.25x.
+
+### Caveats
+- GFLOP/s column uses direct-conv FLOP count -> for Winograd it is EFFECTIVE GFLOP/s.
+  Compare on time, or label "effective" in thesis.
+- Winograd output not verified (timing only). Optional: one-time tolerance compare
+  vs pinned (expect ~1e-5, not exact — different arithmetic order).
+- Optional step 4: print "N/A" row when supported == false (not triggered on these shapes).
 
 ## Session PDFs
 - Phase2_M1_naive.pdf, M1_Theoria_Perilipsi.pdf, Phase2_M2_benchmark.pdf,

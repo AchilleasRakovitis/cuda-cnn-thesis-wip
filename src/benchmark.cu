@@ -15,13 +15,17 @@ const char* conv_impl_name(ConvImpl impl){
         return "tiled";
     case CONV_REGTILED:
         return "regtiled";
+    case CONV_CUDNN_WINO:
+        return "wino";
+    case CONV_CUDNN_WINO_NONFUSED:
+        return "wino_nf";
     default:
         return "unknown";
     }
 }
 
 static void run_conv_once(cudnnHandle_t cudnn, convLayer& layer, ConvImpl impl,
-                            float* d_input, void* d_workspace, float* d_out,
+                            float* d_input, cudnnConvolutionFwdAlgo_t algo, void* d_workspace, size_t workspace_size, float* d_out,
                             const ConvDims& d){
     
     const float alpha = 1.0f;
@@ -30,7 +34,9 @@ static void run_conv_once(cudnnHandle_t cudnn, convLayer& layer, ConvImpl impl,
     switch (impl)
     {
     case CONV_CUDNN:
-        CHECK_CUDNN(cudnnConvolutionForward(
+    case CONV_CUDNN_WINO:
+    case CONV_CUDNN_WINO_NONFUSED:
+                CHECK_CUDNN(cudnnConvolutionForward(
             cudnn,
             &alpha,
             layer.input_desc,
@@ -38,13 +44,13 @@ static void run_conv_once(cudnnHandle_t cudnn, convLayer& layer, ConvImpl impl,
             layer.filter_desc,
             layer.d_filter,
             layer.conv_desc,
-            layer.algo,
+            algo,   
             d_workspace,
-            layer.workspace_bytes,
+            workspace_size,
             &beta_overwrite,
             layer.output_desc,
             d_out
-        ));
+        ));    
         break;
     case CONV_NAIVE:
         launch_conv_naive(d_input, layer.d_filter, d_out, d);
@@ -74,6 +80,39 @@ BenchResult bench_conv(cudnnHandle_t cudnn, convLayer& layer, int layer_id,
     d.S = layer.kernel_size;
     d.pad = layer.kernel_size / 2;
     
+    cudnnConvolutionFwdAlgo_t algo = layer.algo;
+    void* ws = d_workspace;
+    size_t ws_bytes = layer.workspace_bytes;
+
+    void* d_ws_private = nullptr; //allocated only for the winograd impls
+
+    if(impl == CONV_CUDNN_WINO || impl == CONV_CUDNN_WINO_NONFUSED){
+        
+        //choose the algorithm
+        if(impl == CONV_CUDNN_WINO) algo = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD; 
+        else algo = CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED;
+        
+        //ask cuDNN how much workspace it needs, NOT wrapped in CHECK_CUDNN
+        cudnnStatus_t st = cudnnGetConvolutionForwardWorkspaceSize(
+           cudnn, layer.input_desc, layer.filter_desc, layer.conv_desc,
+           layer.output_desc, algo, &ws_bytes     
+        );
+
+        // not supported for this shape -> report it and skip
+        if (st != CUDNN_STATUS_SUCCESS) {
+            printf("  L%d %s: %s\n", layer_id, conv_impl_name(impl), cudnnGetErrorString(st));
+            BenchResult b{};
+            b.impl = impl;
+            b.layer_id = layer_id;
+            b.supported = false;
+            return b;
+        }
+
+        //allocate the private workspace, then point ws at it
+        if(ws_bytes > 0) CHECK_CUDA(cudaMalloc(&d_ws_private, ws_bytes));
+        ws = d_ws_private;
+    }
+
     //events for timing
     cudaEvent_t start, stop;
     CHECK_CUDA(cudaEventCreate(&start));
@@ -81,7 +120,7 @@ BenchResult bench_conv(cudnnHandle_t cudnn, convLayer& layer, int layer_id,
 
     //warmup with no benchmarking
     for(int i = 0; i < warmup; i++){
-        run_conv_once(cudnn, layer, impl, d_input, d_workspace, d_out, d);
+        run_conv_once(cudnn, layer, impl, d_input, algo, ws, ws_bytes, d_out, d);
     }
     CHECK_CUDA(cudaDeviceSynchronize());
 
@@ -91,7 +130,7 @@ BenchResult bench_conv(cudnnHandle_t cudnn, convLayer& layer, int layer_id,
 
     for(int i = 0; i < iters; i++){
         CHECK_CUDA(cudaEventRecord(start));
-        run_conv_once(cudnn, layer, impl, d_input, d_workspace, d_out, d);
+        run_conv_once(cudnn, layer, impl, d_input, algo, ws, ws_bytes, d_out, d);
         CHECK_CUDA(cudaEventRecord(stop));
         CHECK_CUDA(cudaEventSynchronize(stop));
 
@@ -113,6 +152,7 @@ BenchResult bench_conv(cudnnHandle_t cudnn, convLayer& layer, int layer_id,
     //Cleanup
     CHECK_CUDA(cudaEventDestroy(start));
     CHECK_CUDA(cudaEventDestroy(stop));
+    if(d_ws_private != nullptr) CHECK_CUDA(cudaFree(d_ws_private));
 
     //Save the results to the benchmark struct
     BenchResult b;
@@ -121,6 +161,7 @@ BenchResult bench_conv(cudnnHandle_t cudnn, convLayer& layer, int layer_id,
     b.ms_median = ms_median;
     b.ms_min = ms_min;
     b.gflops = gflops;
+    b.supported = true;
     b.pct_peak = pct;
     return b;
 }
