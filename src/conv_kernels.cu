@@ -393,6 +393,23 @@ void verify_conv_tiled(cudnnHandle_t cudnn, convLayer& layer, float* d_input, vo
     CHECK_CUDA(cudaFree(d_tiled));
 }
 
+// Register-tiled direct convolution, forward pass.
+//
+// Same operation as the naive and tiled kernels, but each thread computes a
+// 2x2 block of outputs instead of one. A 16x16 thread block therefore covers
+// a 32x32 output tile, loaded with its halo into a 34x34 shared tile
+// (REG_SH = REG_OUT + R - 1), one channel at a time as in the tiled kernel.
+//
+// The four outputs of a thread use the same weight at each filter position
+// (r,s), so the weight is read once and multiplied into four accumulators held
+// in registers. The compute reads need no bounds check (halo-padded shared
+// tile); each of the four writes is guarded separately, because a thread's
+// 2x2 block can straddle the image edge.
+//
+// This kernel corresponds to the T4 (thread register tile) level of the Lopes
+// hierarchy. Technique guided by the reference implementation (github.com/
+// paclopes/cuDconv); the 2x2 tile, indexing and variables are our own,
+// without the reference's vectorized (float4) loads or analytic tile sizes.
 __global__ void conv_forward_regtiled_kernel(const float* __restrict__ input, const float* __restrict__ filter,
                                              float* __restrict__ output, ConvDims d){
 
