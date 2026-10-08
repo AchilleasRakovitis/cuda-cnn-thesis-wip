@@ -15,6 +15,8 @@ const char* conv_impl_name(ConvImpl impl){
         return "tiled";
     case CONV_REGTILED:
         return "regtiled";
+    case CONV_OUTER:
+        return "outer";
     case CONV_CUDNN_WINO:
         return "wino";
     case CONV_CUDNN_WINO_NONFUSED:
@@ -60,6 +62,9 @@ static void run_conv_once(cudnnHandle_t cudnn, convLayer& layer, ConvImpl impl,
         break;
     case CONV_REGTILED:
         launch_conv_regtiled(d_input, layer.d_filter, d_out, d);
+        break;
+    case CONV_OUTER:
+        launch_conv_outer(d_input, layer.d_filter, d_out, d);
         break;
     default:
         break;

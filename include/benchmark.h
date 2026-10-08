@@ -9,6 +9,7 @@ enum ConvImpl{
     CONV_NAIVE,
     CONV_TILED,
     CONV_REGTILED,
+    CONV_OUTER,
     CONV_CUDNN_WINO,    // benchmark-only reference: cuDNN WINOGRAD (fused)
     CONV_CUDNN_WINO_NONFUSED,   // benchmark-only reference: cuDNN WINOGRAD_NONFUSED
     //REST

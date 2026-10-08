@@ -36,3 +36,10 @@ __global__ void conv_forward_regtiled_kernel(const float* __restrict__ input, co
                                              float* __restrict__ output, ConvDims d);
 
 void verify_conv_regtiled(cudnnHandle_t cudnn, convLayer& layer, float* d_input, void* d_workspace);
+
+void launch_conv_outer(const float* d_input, const float* d_filter, float* d_output, const ConvDims& d);
+
+__global__ void conv_forward_outer_kernel(const float* __restrict__ input, const float* __restrict__ filter,
+                                          float* __restrict__ output, ConvDims d);
+
+void verify_conv_outer(cudnnHandle_t cudnn, convLayer& layer, float* d_input, void* d_workspace);
